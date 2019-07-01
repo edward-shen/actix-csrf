@@ -74,9 +74,7 @@ mod tests {
     use super::*;
 
     use actix_web::http::header;
-    use actix_web::http::StatusCode;
-    use actix_web::test::{self, TestRequest};
-    use actix_web::{web, App, HttpResponse};
+    use actix_web::test::TestRequest;
 
     #[test]
     fn extract_from_header() {

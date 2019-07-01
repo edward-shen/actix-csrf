@@ -30,7 +30,7 @@
 //! You can deactivate the protection (for example for dev mode or unit tests.
 //! ```
 //! use actix_csrf::Csrf;
-//! Csrf::new().enable(false);
+//! Csrf::new().set_enabled(false);
 //! ```
 //!
 use actix_service::{Service, Transform};
@@ -47,6 +47,7 @@ use futures::future::{ok, FutureResult};
 use futures::{Future, Poll};
 use log::error;
 use std::collections::HashMap;
+use std::default::Default;
 
 use failure::Fail;
 
@@ -67,9 +68,6 @@ pub enum CsrfError {
     /// No CSRF Token in the request (headers/body...).
     #[fail(display = "The CSRF Token is missing = {}", _0)]
     MissingToken(String),
-
-    #[fail(display = "Cannot convert header value to string because of non ASCII characters")]
-    HeaderBadValue,
 }
 
 impl ResponseError for CsrfError {
@@ -84,10 +82,83 @@ impl ResponseError for CsrfError {
 /// Middleware builder. The default will check CSRF on every request but
 /// GET and POST. You can specify whether to disable.
 pub struct Csrf {
+    inner: Inner,
+}
+
+impl Csrf {
+    /// Create the CSRF default middleware
+    pub fn new() -> Self {
+        Self {
+            inner: Inner::default(),
+        }
+    }
+
+    /// Control whether we check for the token on requests.
+    pub fn set_enabled(mut self, enabled: bool) -> Self {
+        self.inner.csrf_enabled = enabled;
+        self
+    }
+
+    /// Add an extractor for the specified method.
+    pub fn add_extractor(mut self, method: Method, extractor: Box<extractor::Extractor>) -> Self {
+        self.inner.req_extractors.insert(method, extractor);
+        self
+    }
+
+    /// Replace all the extractors
+    pub fn set_extractors(
+        mut self,
+        extractors: HashMap<Method, Box<extractor::Extractor>>,
+    ) -> Self {
+        self.inner.req_extractors = extractors;
+        self
+    }
+
+    /// Add a whitelisted endpoint
+    pub fn add_whilelist(mut self, method: Method, uri: String) -> Self {
+        self.inner.whitelist.push((method, uri));
+        self
+    }
+}
+
+// Middleware factory is `Transform` trait from actix-service crate
+// `S` - type of the next service
+// `B` - type of response's body
+impl<S, B> Transform<S> for Csrf
+where
+    S: Service<Request = ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
+    S::Future: 'static,
+    B: 'static,
+{
+    type Request = ServiceRequest;
+    type Response = ServiceResponse<B>;
+    type Error = Error;
+    type InitError = ();
+    type Transform = CsrfMiddleware<S>;
+    type Future = FutureResult<Self::Transform, Self::InitError>;
+
+    fn new_transform(&self, service: S) -> Self::Future {
+        ok(CsrfMiddleware {
+            service,
+            inner: self.inner.clone(),
+        })
+    }
+}
+
+pub struct CsrfMiddleware<S> {
+    service: S,
+    inner: Inner,
+}
+
+#[derive(Clone)]
+struct Inner {
+    /// To generate the token
     generator: Box<generator::Generator>,
 
-    /// Control whether or not we check the CSRF token.
-    enabled: bool,
+    cookie_name: String,
+
+    /// If false, will not check at all for CSRF tokens
+    csrf_enabled: bool,
 
     /// Extract the token from an incoming HTTP request. One extractor
     /// per Method.
@@ -98,13 +169,12 @@ pub struct Csrf {
     whitelist: Vec<(Method, String)>,
 }
 
-impl Csrf {
-    /// Create the CSRF default middleware
-    pub fn new() -> Self {
+impl Default for Inner {
+    fn default() -> Self {
         // sane defaults?
         let generator = Box::new(generator::RandGenerator::new());
-
         let mut req_extractors: HashMap<Method, Box<extractor::Extractor>> = HashMap::new();
+        let cookie_name = String::from("csrfToken");
         req_extractors.insert(
             Method::POST,
             Box::new(extractor::BasicExtractor::Header {
@@ -128,85 +198,32 @@ impl Csrf {
 
         Self {
             generator,
-            enabled: true,
+            cookie_name,
             req_extractors,
             whitelist: vec![],
+            csrf_enabled: true,
         }
     }
-
-    /// Control whether we check for the token on requests.
-    pub fn enable(mut self, enabled: bool) -> Self {
-        self.enabled = enabled;
-        self
-    }
-
-    pub fn extractor(mut self, method: Method, extractor: Box<extractor::Extractor>) -> Self {
-        self.req_extractors.insert(method, extractor);
-        self
-    }
-}
-
-// Middleware factory is `Transform` trait from actix-service crate
-// `S` - type of the next service
-// `B` - type of response's body
-impl<S, B> Transform<S> for Csrf
-where
-    S: Service<Request = ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
-    S::Future: 'static,
-    B: 'static,
-{
-    type Request = ServiceRequest;
-    type Response = ServiceResponse<B>;
-    type Error = Error;
-    type InitError = ();
-    type Transform = CsrfMiddleware<S>;
-    type Future = FutureResult<Self::Transform, Self::InitError>;
-
-    fn new_transform(&self, service: S) -> Self::Future {
-        let cookie_name = String::from("csrfToken");
-
-        ok(CsrfMiddleware {
-            service,
-            inner: Inner {
-                generator: self.generator.clone(),
-                cookie_name,
-                csrf_enabled: self.enabled,
-                req_extractors: self.req_extractors.clone(),
-                whitelist: vec![],
-            },
-        })
-    }
-}
-
-pub struct CsrfMiddleware<S> {
-    service: S,
-    inner: Inner,
-}
-
-struct Inner {
-    /// To generate the token
-    generator: Box<generator::Generator>,
-
-    cookie_name: String,
-
-    /// If false, will not check at all for CSRF tokens
-    csrf_enabled: bool,
-
-    /// Extract the token from an incoming HTTP request. One extractor
-    /// per Method.
-    req_extractors: HashMap<Method, Box<extractor::Extractor>>,
-
-    /// Endpoints that are not protected by the middleware.
-    /// combinaison of Method and URI.
-    whitelist: Vec<(Method, String)>,
 }
 
 impl Inner {
     /// Will return true if the middleware needs to check the CSRF tokens.
     fn should_protect(&self, req: &ServiceRequest) -> bool {
-        // TODO Check if in whitelist.
+        if self.in_whilelist(&req.method(), req.path()) {
+            return false;
+        }
 
         (self.req_extractors.contains_key(req.method())) && self.csrf_enabled
+    }
+
+    fn in_whilelist(&self, req_method: &Method, req_uri: &str) -> bool {
+        for (method, uri) in &self.whitelist {
+            if method == req_method && uri == req_uri {
+                return true;
+            }
+        }
+
+        false
     }
 
     /// Generate the next token
@@ -302,7 +319,7 @@ mod tests {
 
     fn get_token_from_resp(resp: &ServiceResponse) -> String {
         // Cookie should be in the response.
-        let mut cookie_header: Vec<_> = resp
+        let cookie_header: Vec<_> = resp
             .headers()
             .iter()
             .filter(|(header_name, _)| header_name.as_str() == "set-cookie")
@@ -367,7 +384,7 @@ mod tests {
     fn test_post_accepted_with_disabled() {
         let mut srv = test::init_service(
             App::new()
-                .wrap(Csrf::new().enable(false))
+                .wrap(Csrf::new().set_enabled(false))
                 .service(web::resource("/").route(web::post().to(|| HttpResponse::Ok()))),
         );
         let resp = test::call_service(&mut srv, TestRequest::post().uri("/").to_request());
@@ -407,6 +424,27 @@ mod tests {
             .to_request();
         let resp = test::call_service(&mut srv, req);
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn test_whitelist() {
+        let mut srv = test::init_service(
+            App::new()
+                .wrap(Csrf::new().add_whilelist(Method::POST, "/".to_string()))
+                .service(web::resource("/").route(web::post().to(|| HttpResponse::Ok()))),
+        );
+        let resp = test::call_service(&mut srv, TestRequest::post().uri("/").to_request());
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Cookie should be in the response.
+        let cookie_header: Vec<_> = resp
+            .headers()
+            .iter()
+            .filter(|(header_name, _)| header_name.as_str() == "set-cookie")
+            .map(|(_, value)| String::from(value.to_str().unwrap()))
+            .collect();
+        assert_eq!(1, cookie_header.len());
+        assert!(cookie_header.get(0).unwrap().contains("csrfToken"));
     }
 
 }
