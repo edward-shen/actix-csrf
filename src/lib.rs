@@ -38,7 +38,7 @@ use actix_web::{
     cookie::Cookie,
     dev::ServiceRequest,
     dev::ServiceResponse,
-    http::header::{self, HeaderName, HeaderValue},
+    http::header::{self, HeaderValue},
     http::{Method, StatusCode},
     Error, HttpMessage, HttpResponse, ResponseError,
 };
@@ -46,12 +46,12 @@ use futures::future::Either;
 use futures::future::{ok, FutureResult};
 use futures::{Future, Poll};
 use log::error;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use failure::Fail;
 
-mod extractor;
-mod generator;
+pub mod extractor;
+pub mod generator;
 
 /// Internal errors that can happen when processing CSRF tokens.
 #[derive(Debug, Fail)]
@@ -84,6 +84,8 @@ impl ResponseError for CsrfError {
 /// Middleware builder. The default will check CSRF on every request but
 /// GET and POST. You can specify whether to disable.
 pub struct Csrf {
+    generator: Box<generator::Generator>,
+
     /// Control whether or not we check the CSRF token.
     enabled: bool,
 
@@ -100,6 +102,8 @@ impl Csrf {
     /// Create the CSRF default middleware
     pub fn new() -> Self {
         // sane defaults?
+        let generator = Box::new(generator::RandGenerator::new());
+
         let mut req_extractors: HashMap<Method, Box<extractor::Extractor>> = HashMap::new();
         req_extractors.insert(
             Method::POST,
@@ -123,6 +127,7 @@ impl Csrf {
         );
 
         Self {
+            generator,
             enabled: true,
             req_extractors,
             whitelist: vec![],
@@ -163,7 +168,7 @@ where
         ok(CsrfMiddleware {
             service,
             inner: Inner {
-                generator: Box::new(generator::RandGenerator::new()),
+                generator: self.generator.clone(),
                 cookie_name,
                 csrf_enabled: self.enabled,
                 req_extractors: self.req_extractors.clone(),
@@ -199,6 +204,8 @@ struct Inner {
 impl Inner {
     /// Will return true if the middleware needs to check the CSRF tokens.
     fn should_protect(&self, req: &ServiceRequest) -> bool {
+        // TODO Check if in whitelist.
+
         (self.req_extractors.contains_key(req.method())) && self.csrf_enabled
     }
 

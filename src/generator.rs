@@ -4,10 +4,31 @@
 use rand::distributions::Alphanumeric;
 use rand::{rngs::ThreadRng, thread_rng, Rng};
 
-pub trait Generator {
+pub trait Generator: GeneratorClone {
     fn generate_token(&mut self) -> String;
 }
 
+// https://stackoverflow.com/questions/30353462/how-to-clone-a-struct-storing-a-boxed-trait-object/30353928#30353928
+pub trait GeneratorClone {
+    fn clone_box(&self) -> Box<Generator>;
+}
+
+impl<T> GeneratorClone for T
+where
+    T: 'static + Generator + Clone,
+{
+    fn clone_box(&self) -> Box<Generator> {
+        Box::new(self.clone())
+    }
+}
+
+impl Clone for Box<Generator> {
+    fn clone(&self) -> Box<Generator> {
+        self.clone_box()
+    }
+}
+
+#[derive(Clone)]
 pub struct RandGenerator(ThreadRng);
 
 impl RandGenerator {

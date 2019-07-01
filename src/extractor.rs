@@ -12,7 +12,6 @@
 
 use crate::CsrfError;
 use actix_web::dev::ServiceRequest;
-use actix_web::http::header;
 use actix_web::HttpMessage;
 
 /// Trait to extract token from a request.
@@ -21,7 +20,7 @@ pub trait Extractor: ExtractorClone {
 }
 
 // https://stackoverflow.com/questions/30353462/how-to-clone-a-struct-storing-a-boxed-trait-object/30353928#30353928
-trait ExtractorClone {
+pub trait ExtractorClone {
     fn clone_box(&self) -> Box<Extractor>;
 }
 
@@ -74,6 +73,7 @@ impl Extractor for BasicExtractor {
 mod tests {
     use super::*;
 
+    use actix_web::http::header;
     use actix_web::http::StatusCode;
     use actix_web::test::{self, TestRequest};
     use actix_web::{web, App, HttpResponse};
