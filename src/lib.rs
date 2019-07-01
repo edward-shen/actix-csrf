@@ -78,6 +78,7 @@ impl ResponseError for CsrfError {
         // I don't really want to leak the error to the client. But I need
         // to log it as CSRF attacks are a thing.
         error!("{}", self);
+        println!("{}", self);
         HttpResponse::with_body(StatusCode::BAD_REQUEST, format!("CSRF Error").into())
     }
 }
@@ -142,14 +143,12 @@ where
         let rng = thread_rng();
 
         let cookie_name = String::from("csrfToken");
-        let header_name = HeaderName::from_static("x-csrf-token");
 
         ok(CsrfMiddleware {
             service,
             inner: Inner {
                 rng,
                 cookie_name,
-                header_name,
                 csrf_enabled: self.enabled,
                 req_extractors: self.req_extractors.clone(),
             },
@@ -165,7 +164,6 @@ pub struct CsrfMiddleware<S> {
 struct Inner {
     rng: ThreadRng,
     cookie_name: String,
-    header_name: HeaderName,
     csrf_enabled: bool,
     /// Extract the token from an incoming HTTP request. One extractor
     /// per Method.
@@ -236,6 +234,7 @@ where
                 (Err(e), Ok(_)) | (Ok(_), Err(e)) => return Either::A(ok(req.error_response(e))),
                 (Err(e), Err(_)) => return Either::A(ok(req.error_response(e))),
                 (Ok(ref cookie_token), Ok(ref req_token)) if cookie_token != req_token => {
+                    println!("COOKIE {:?} HEADER {:?}", cookie_token, req_token);
                     return Either::A(ok(req.error_response(CsrfError::TokenDontMatch)));
                 }
                 _ => (),
@@ -271,6 +270,34 @@ mod tests {
     use actix_web::test::{self, TestRequest};
     use actix_web::{web, App, HttpResponse};
 
+    fn get_token_from_resp(resp: &ServiceResponse) -> String {
+        // Cookie should be in the response.
+        let mut cookie_header: Vec<_> = resp
+            .headers()
+            .iter()
+            .filter(|(header_name, _)| header_name.as_str() == "set-cookie")
+            .map(|(_, value)| String::from(value.to_str().unwrap()))
+            .collect();
+        assert_eq!(1, cookie_header.len());
+        assert!(cookie_header.get(0).unwrap().contains("csrfToken"));
+
+        // should be something like "csrfToken=NHMWzEq7nAFZR56jnanhFv6WJdeEAyhy; Path=/"
+        println!("{:?}", cookie_header.get(0).unwrap());
+        let token_header: String = cookie_header.get(0).take().unwrap().to_string();
+        let token = &token_header[10..42];
+        String::from(token)
+    }
+
+    fn get_cookie_from_resp(resp: &ServiceResponse) -> String {
+        let cookie_header: Vec<_> = resp
+            .headers()
+            .iter()
+            .filter(|(header_name, _)| header_name.as_str() == "set-cookie")
+            .map(|(_, value)| String::from(value.to_str().unwrap()))
+            .collect();
+        assert_eq!(1, cookie_header.len());
+        String::from(cookie_header.get(0).unwrap().as_str())
+    }
     // Check that the CSRF token is correctly attached to the response
     #[test]
     fn test_attach_token() {
@@ -323,6 +350,33 @@ mod tests {
             .collect();
 
         assert_eq!(0, cookie_header.len());
+    }
+
+    /// Will use double submit method.
+    #[test]
+    fn double_submit_correct_token() {
+        let mut srv = test::init_service(
+            App::new().wrap(Csrf::new()).service(
+                web::resource("/")
+                    .route(web::get().to(|| HttpResponse::Ok()))
+                    .route(web::post().to(|| HttpResponse::Ok())),
+            ),
+        );
+
+        // First, let's get the token as a client.
+        let resp = test::call_service(&mut srv, TestRequest::with_uri("/").to_request());
+
+        let token = get_token_from_resp(&resp);
+        let cookie = get_cookie_from_resp(&resp);
+
+        // Now we can do another request to a protected endpoint.
+        let req = TestRequest::post()
+            .uri("/")
+            .header("cookie", cookie)
+            .header("x-csrf-token", token)
+            .to_request();
+        let resp = test::call_service(&mut srv, req);
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 
 }
