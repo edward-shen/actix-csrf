@@ -49,10 +49,9 @@ use log::error;
 use std::collections::{HashMap, HashSet};
 
 use failure::Fail;
-use rand::distributions::Alphanumeric;
-use rand::{rngs::ThreadRng, thread_rng, Rng};
 
 mod extractor;
+mod generator;
 
 /// Internal errors that can happen when processing CSRF tokens.
 #[derive(Debug, Fail)]
@@ -78,7 +77,6 @@ impl ResponseError for CsrfError {
         // I don't really want to leak the error to the client. But I need
         // to log it as CSRF attacks are a thing.
         error!("{}", self);
-        println!("{}", self);
         HttpResponse::with_body(StatusCode::BAD_REQUEST, format!("CSRF Error").into())
     }
 }
@@ -92,6 +90,10 @@ pub struct Csrf {
     /// Extract the token from an incoming HTTP request. One extractor
     /// per Method.
     req_extractors: HashMap<Method, Box<extractor::Extractor>>,
+
+    /// Endpoints that are not protected by the middleware.
+    /// combinaison of Method and URI.
+    whitelist: Vec<(Method, String)>,
 }
 
 impl Csrf {
@@ -105,9 +107,25 @@ impl Csrf {
                 name: "x-csrf-token".to_owned(),
             }),
         );
+
+        req_extractors.insert(
+            Method::PUT,
+            Box::new(extractor::BasicExtractor::Header {
+                name: "x-csrf-token".to_owned(),
+            }),
+        );
+
+        req_extractors.insert(
+            Method::DELETE,
+            Box::new(extractor::BasicExtractor::Header {
+                name: "x-csrf-token".to_owned(),
+            }),
+        );
+
         Self {
             enabled: true,
             req_extractors,
+            whitelist: vec![],
         }
     }
 
@@ -140,17 +158,16 @@ where
     type Future = FutureResult<Self::Transform, Self::InitError>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        let rng = thread_rng();
-
         let cookie_name = String::from("csrfToken");
 
         ok(CsrfMiddleware {
             service,
             inner: Inner {
-                rng,
+                generator: Box::new(generator::RandGenerator::new()),
                 cookie_name,
                 csrf_enabled: self.enabled,
                 req_extractors: self.req_extractors.clone(),
+                whitelist: vec![],
             },
         })
     }
@@ -162,12 +179,21 @@ pub struct CsrfMiddleware<S> {
 }
 
 struct Inner {
-    rng: ThreadRng,
+    /// To generate the token
+    generator: Box<generator::Generator>,
+
     cookie_name: String,
+
+    /// If false, will not check at all for CSRF tokens
     csrf_enabled: bool,
+
     /// Extract the token from an incoming HTTP request. One extractor
     /// per Method.
     req_extractors: HashMap<Method, Box<extractor::Extractor>>,
+
+    /// Endpoints that are not protected by the middleware.
+    /// combinaison of Method and URI.
+    whitelist: Vec<(Method, String)>,
 }
 
 impl Inner {
@@ -178,10 +204,7 @@ impl Inner {
 
     /// Generate the next token
     fn generate_token(&mut self) -> String {
-        std::iter::repeat(())
-            .map(|()| self.rng.sample(Alphanumeric))
-            .take(32)
-            .collect()
+        self.generator.generate_token()
     }
 
     /// Will extract the token from a cookie that was set previously.
