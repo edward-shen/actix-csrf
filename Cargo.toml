@@ -5,7 +5,6 @@ authors = ["Benoit Eudier <benoit.eudier@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-actix = "0.8.2"
 actix-rt = "0.2.2"
 actix-web = "1.0.0"
 actix-service = "0.4.1"
