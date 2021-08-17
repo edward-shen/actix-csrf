@@ -34,9 +34,8 @@
 //! ```
 //!
 
-use actix_service::{Service, Transform};
 use actix_web::cookie::Cookie;
-use actix_web::dev::{ServiceRequest, ServiceResponse};
+use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::http::header::{self, HeaderValue};
 use actix_web::http::{Method, StatusCode};
 use actix_web::{Either, HttpMessage, HttpResponse, ResponseError};
@@ -46,6 +45,7 @@ use std::convert::Infallible;
 use std::default::Default;
 use std::fmt::Display;
 use std::future::{self, Future, Ready};
+use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -57,10 +57,8 @@ pub mod generator;
 pub enum CsrfError {
     /// The CSRF Token and the token provided in the headers do not match
     TokenDontMatch,
-
     /// No CSRF Token in the cookies.
     MissingCookie,
-
     /// No CSRF Token in the request (headers/body...).
     MissingToken(String),
 }
@@ -126,13 +124,14 @@ impl Csrf {
     }
 }
 
-// Middleware factory is `Transform` trait from actix-service crate
-// `S` - type of the next service
-// `B` - type of response's body
-impl<S: Service<ServiceRequest>> Transform<S, ServiceRequest> for Csrf {
-    type Response = Either<ServiceResponse, S::Response>;
+impl<S> Transform<S> for Csrf
+where
+    S: Service<Request = ServiceRequest, Response = ServiceResponse>,
+{
+    type Request = ServiceRequest;
+    type Response = ServiceResponse;
     type Error = S::Error;
-    type InitError = Infallible;
+    type InitError = ();
     type Transform = CsrfMiddleware<S>;
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
@@ -248,15 +247,16 @@ impl Inner {
     }
 }
 
-impl<S> Service<ServiceRequest> for CsrfMiddleware<S>
+impl<S> Service for CsrfMiddleware<S>
 where
-    S: Service<ServiceRequest>,
+    S: Service<Request = ServiceRequest, Response = ServiceResponse>,
 {
-    type Response = Either<ServiceResponse, S::Response>;
+    type Request = ServiceRequest;
+    type Response = ServiceResponse;
     type Error = S::Error;
     type Future = CsrfMiddlewareFuture<S>;
 
-    fn call(&self, req: ServiceRequest) -> Self::Future {
+    fn call(&mut self, req: ServiceRequest) -> Self::Future {
         // Before request, we need to check that for protected resources, the CSRF
         // tokens are actually there and matching. By default protected resources
         // are everything but GET and OPTIONS but you might want to also protect
@@ -306,22 +306,30 @@ where
 
         // Box::pin(fut)
 
-        CsrfMiddlewareFuture::Passthrough(fut)
+        CsrfMiddlewareFuture::Passthrough(Box::pin(fut))
     }
 
-    actix_service::forward_ready!(service);
+    fn poll_ready(&mut self, ctx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.service.poll_ready(ctx)
+    }
 }
 
-pub enum CsrfMiddlewareFuture<S: Service<ServiceRequest>> {
+pub enum CsrfMiddlewareFuture<S: Service<Request = ServiceRequest>> {
     CsrfError(ServiceResponse),
-    Passthrough(S::Future),
+    Passthrough(Pin<Box<S::Future>>),
 }
 
-impl<S: Service<ServiceRequest>> Future for CsrfMiddlewareFuture<S> {
-    type Output = Result<Either<ServiceResponse, S::Response>, S::Error>;
+impl<S> Future for CsrfMiddlewareFuture<S>
+where
+    S: Service<Request = ServiceRequest, Response = ServiceResponse>,
+{
+    type Output = Result<ServiceResponse, S::Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        todo!()
+        match self.get_mut() {
+            CsrfMiddlewareFuture::CsrfError(error) => todo!(),
+            CsrfMiddlewareFuture::Passthrough(service) => Pin::new(service).poll(cx),
+        }
     }
 }
 
@@ -361,15 +369,17 @@ mod tests {
         assert_eq!(1, cookie_header.len());
         String::from(cookie_header.get(0).unwrap().as_str())
     }
+
     // Check that the CSRF token is correctly attached to the response
-    #[test]
-    fn test_attach_token() {
+    #[tokio::test]
+    async fn test_attach_token() {
         let mut srv = test::init_service(
             App::new()
                 .wrap(Csrf::new())
                 .service(web::resource("/").to(|| HttpResponse::Ok())),
-        );
-        let resp = test::call_service(&mut srv, TestRequest::with_uri("/").to_request());
+        )
+        .await;
+        let resp = test::call_service(&mut srv, TestRequest::with_uri("/").to_request()).await;
         assert_eq!(resp.status(), StatusCode::OK);
 
         // Cookie should be in the response.
@@ -384,26 +394,28 @@ mod tests {
     }
 
     // With default protection, POST requests is rejected.
-    #[test]
-    fn test_post_request_rejected() {
+    #[tokio::test]
+    async fn test_post_request_rejected() {
         let mut srv = test::init_service(
             App::new()
                 .wrap(Csrf::new())
                 .service(web::resource("/").route(web::post().to(|| HttpResponse::Ok()))),
-        );
-        let resp = test::call_service(&mut srv, TestRequest::post().uri("/").to_request());
+        )
+        .await;
+        let resp = test::call_service(&mut srv, TestRequest::post().uri("/").to_request()).await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     // Can disable protection for unit tests.
-    #[test]
-    fn test_post_accepted_with_disabled() {
+    #[tokio::test]
+    async fn test_post_accepted_with_disabled() {
         let mut srv = test::init_service(
             App::new()
                 .wrap(Csrf::new().set_enabled(false))
                 .service(web::resource("/").route(web::post().to(|| HttpResponse::Ok()))),
-        );
-        let resp = test::call_service(&mut srv, TestRequest::post().uri("/").to_request());
+        )
+        .await;
+        let resp = test::call_service(&mut srv, TestRequest::post().uri("/").to_request()).await;
         assert_eq!(resp.status(), StatusCode::OK);
         let cookie_header: Vec<_> = resp
             .headers()
@@ -416,18 +428,19 @@ mod tests {
     }
 
     /// Will use double submit method.
-    #[test]
-    fn double_submit_correct_token() {
+    #[tokio::test]
+    async fn double_submit_correct_token() {
         let mut srv = test::init_service(
             App::new().wrap(Csrf::new()).service(
                 web::resource("/")
                     .route(web::get().to(|| HttpResponse::Ok()))
                     .route(web::post().to(|| HttpResponse::Ok())),
             ),
-        );
+        )
+        .await;
 
         // First, let's get the token as a client.
-        let resp = test::call_service(&mut srv, TestRequest::with_uri("/").to_request());
+        let resp = test::call_service(&mut srv, TestRequest::with_uri("/").to_request()).await;
 
         let token = get_token_from_resp(&resp);
         let cookie = get_cookie_from_resp(&resp);
@@ -438,18 +451,19 @@ mod tests {
             .header("cookie", cookie)
             .header("x-csrf-token", token)
             .to_request();
-        let resp = test::call_service(&mut srv, req);
+        let resp = test::call_service(&mut srv, req).await;
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
-    #[test]
-    fn test_whitelist() {
+    #[tokio::test]
+    async fn test_whitelist() {
         let mut srv = test::init_service(
             App::new()
                 .wrap(Csrf::new().add_whilelist(Method::POST, "/".to_string()))
                 .service(web::resource("/").route(web::post().to(|| HttpResponse::Ok()))),
-        );
-        let resp = test::call_service(&mut srv, TestRequest::post().uri("/").to_request());
+        )
+        .await;
+        let resp = test::call_service(&mut srv, TestRequest::post().uri("/").to_request()).await;
         assert_eq!(resp.status(), StatusCode::OK);
 
         // Cookie should be in the response.
