@@ -39,9 +39,10 @@ impl RandGenerator {
 
 impl Generator for RandGenerator {
     fn generate_token(&mut self) -> String {
-        std::iter::repeat(())
-            .map(|()| self.0.sample(Alphanumeric))
-            .take(32)
-            .collect()
+        todo!()
+        // std::iter::repeat(())
+        //     .map(|()| self.0.sample(Alphanumeric))
+        //     .take(32)
+        //     .collect()
     }
 }

@@ -33,38 +33,46 @@
 //! Csrf::new().set_enabled(false);
 //! ```
 //!
+
 use actix_service::{Service, Transform};
-use actix_web::{
-    cookie::Cookie,
-    dev::ServiceRequest,
-    dev::ServiceResponse,
-    http::header::{self, HeaderValue},
-    http::{Method, StatusCode},
-    Error, HttpMessage, HttpResponse, ResponseError,
-};
-use futures::future::ok;
-use futures::future::Either;
+use actix_web::cookie::Cookie;
+use actix_web::dev::{ServiceRequest, ServiceResponse};
+use actix_web::http::header::{self, HeaderValue};
+use actix_web::http::{Method, StatusCode};
+use actix_web::{Either, HttpMessage, HttpResponse, ResponseError};
 use log::error;
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::default::Default;
+use std::fmt::Display;
+use std::future::{self, Future, Ready};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 pub mod extractor;
 pub mod generator;
 
 /// Internal errors that can happen when processing CSRF tokens.
-#[derive(Debug, Fail)]
+#[derive(Debug)]
 pub enum CsrfError {
     /// The CSRF Token and the token provided in the headers do not match
-    #[fail(display = "The CSRF Tokens do not match")]
     TokenDontMatch,
 
     /// No CSRF Token in the cookies.
-    #[fail(display = "The CSRF Token is missing in the cookies")]
     MissingCookie,
 
     /// No CSRF Token in the request (headers/body...).
-    #[fail(display = "The CSRF Token is missing = {}", _0)]
     MissingToken(String),
+}
+
+impl Display for CsrfError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CsrfError::TokenDontMatch => write!(f, "The CSRF Tokens do not match"),
+            CsrfError::MissingCookie => write!(f, "The CSRF Token is missing in the cookies"),
+            CsrfError::MissingToken(token) => write!(f, "The CSRF Token is missing = {}", token),
+        }
+    }
 }
 
 impl ResponseError for CsrfError {
@@ -121,24 +129,18 @@ impl Csrf {
 // Middleware factory is `Transform` trait from actix-service crate
 // `S` - type of the next service
 // `B` - type of response's body
-impl<S, B> Transform<S> for Csrf
-where
-    S: Service<Request = ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
-    S::Future: 'static,
-    B: 'static,
-{
-    type Request = ServiceRequest;
-    type Response = ServiceResponse<B>;
-    type Error = Error;
-    type InitError = ();
+impl<S: Service<ServiceRequest>> Transform<S, ServiceRequest> for Csrf {
+    type Response = Either<ServiceResponse, S::Response>;
+    type Error = S::Error;
+    type InitError = Infallible;
     type Transform = CsrfMiddleware<S>;
-    type Future = FutureResult<Self::Transform, Self::InitError>;
+    type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        ok(CsrfMiddleware {
+        future::ready(Ok(CsrfMiddleware {
             service,
             inner: self.inner.clone(),
-        })
+        }))
     }
 }
 
@@ -246,21 +248,15 @@ impl Inner {
     }
 }
 
-impl<S, B> Service for CsrfMiddleware<S>
+impl<S> Service<ServiceRequest> for CsrfMiddleware<S>
 where
-    S: Service<Request = ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
-    S::Future: 'static,
-    B: 'static,
+    S: Service<ServiceRequest>,
 {
-    type Request = ServiceRequest;
-    type Response = ServiceResponse<B>;
-    type Error = Error;
-    type Future = Either<
-        FutureResult<Self::Response, Error>,
-        Box<Future<Item = Self::Response, Error = Self::Error>>,
-    >;
+    type Response = Either<ServiceResponse, S::Response>;
+    type Error = S::Error;
+    type Future = CsrfMiddlewareFuture<S>;
 
-    fn call(&mut self, req: ServiceRequest) -> Self::Future {
+    fn call(&self, req: ServiceRequest) -> Self::Future {
         // Before request, we need to check that for protected resources, the CSRF
         // tokens are actually there and matching. By default protected resources
         // are everything but GET and OPTIONS but you might want to also protect
@@ -271,34 +267,61 @@ where
             let req_token = self.inner.extract_request_token(&req);
 
             match (cookie_token, req_token) {
-                (Err(e), Ok(_)) | (Ok(_), Err(e)) => return Either::A(ok(req.error_response(e))),
-                (Err(e), Err(_)) => return Either::A(ok(req.error_response(e))),
+                (Err(e), _) | (_, Err(e)) => {
+                    return CsrfMiddlewareFuture::CsrfError(req.error_response(e));
+                }
                 (Ok(ref cookie_token), Ok(ref req_token)) if cookie_token != req_token => {
                     println!("COOKIE {:?} HEADER {:?}", cookie_token, req_token);
-                    return Either::A(ok(req.error_response(CsrfError::TokenDontMatch)));
+                    return CsrfMiddlewareFuture::CsrfError(
+                        req.error_response(CsrfError::TokenDontMatch),
+                    );
                 }
-                _ => (),
+                _ => (), // tokens match, continue
             }
         }
 
         // TODO Lifetime issue when I put that in and_then
-        let token = self.inner.generate_token();
-        let cookie_name = self.inner.cookie_name.clone();
-        let enabled = self.inner.csrf_enabled.clone();
+        // let token = self.inner.generate_token();
+        // let cookie_name = self.inner.cookie_name.clone();
+        // let enabled = self.inner.csrf_enabled.clone();
 
-        Either::B(Box::new(self.service.call(req).and_then(move |mut res| {
-            // Set the newly generated token.
-            let mut cookie = Cookie::new(cookie_name, token);
-            cookie.set_path("/");
+        let fut = self.service.call(req);
 
-            if enabled {
-                res.headers_mut().insert(
-                    header::SET_COOKIE,
-                    HeaderValue::from_str(&cookie.to_string()).unwrap(),
-                );
-            }
-            Ok(res)
-        })))
+        // let fut = async {
+        //     self.service.call(req).await.and_then(move |mut res| {
+        //         // Set the newly generated token.
+        //         let mut cookie = Cookie::new(cookie_name, token);
+        //         cookie.set_path("/");
+
+        //         if enabled {
+        //             res.response_mut().headers_mut().insert(
+        //                 header::SET_COOKIE,
+        //                 HeaderValue::from_str(&cookie.to_string()).unwrap(),
+        //             );
+        //         }
+
+        //         Ok(res)
+        //     })
+        // };
+
+        // Box::pin(fut)
+
+        CsrfMiddlewareFuture::Passthrough(fut)
+    }
+
+    actix_service::forward_ready!(service);
+}
+
+pub enum CsrfMiddlewareFuture<S: Service<ServiceRequest>> {
+    CsrfError(ServiceResponse),
+    Passthrough(S::Future),
+}
+
+impl<S: Service<ServiceRequest>> Future for CsrfMiddlewareFuture<S> {
+    type Output = Result<Either<ServiceResponse, S::Response>, S::Error>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        todo!()
     }
 }
 
