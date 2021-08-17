@@ -42,14 +42,11 @@ use actix_web::{
     http::{Method, StatusCode},
     Error, HttpMessage, HttpResponse, ResponseError,
 };
+use futures::future::ok;
 use futures::future::Either;
-use futures::future::{ok, FutureResult};
-use futures::{Future, Poll};
 use log::error;
 use std::collections::HashMap;
 use std::default::Default;
-
-use failure::Fail;
 
 pub mod extractor;
 pub mod generator;
@@ -165,7 +162,7 @@ struct Inner {
     req_extractors: HashMap<Method, Box<extractor::Extractor>>,
 
     /// Endpoints that are not protected by the middleware.
-    /// combinaison of Method and URI.
+    /// Mapping of Method to URI.
     whitelist: Vec<(Method, String)>,
 }
 
@@ -262,10 +259,6 @@ where
         FutureResult<Self::Response, Error>,
         Box<Future<Item = Self::Response, Error = Self::Error>>,
     >;
-
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.service.poll_ready()
-    }
 
     fn call(&mut self, req: ServiceRequest) -> Self::Future {
         // Before request, we need to check that for protected resources, the CSRF
@@ -446,5 +439,4 @@ mod tests {
         assert_eq!(1, cookie_header.len());
         assert!(cookie_header.get(0).unwrap().contains("csrfToken"));
     }
-
 }
