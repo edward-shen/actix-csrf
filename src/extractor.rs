@@ -1,21 +1,10 @@
-//! Extractor are used to extract the CSRF token.
-//!
-//! The token can be stored in different ways (POST body, headers,
-//! GET params, session...).
-//!
-//! Basic extractors are provided:
-//! - from header
-//! - from cookie
-//! - from url parameters
-//!
-//! You can use the trait `Extractor` to add a custom extractor.
-
 use std::future::{ready, Ready};
 
 use crate::{CsrfError, DEFAULT_CSRF_COOKIE_NAME, DEFAULT_CSRF_TOKEN_NAME};
 use actix_web::dev::{Payload, ServiceRequest};
 use actix_web::{FromRequest, HttpRequest};
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CsrfHeader(String);
 
 impl CsrfHeader {
@@ -31,6 +20,7 @@ impl CsrfHeader {
             .map(Self)
     }
 
+    /// Retrieves a reference of the csrf token.
     pub fn get(&self) -> &str {
         &self.0
     }
@@ -93,6 +83,7 @@ impl CsrfCookie {
             .map(|cookie| Self(cookie.value().to_string()))
     }
 
+    /// Retrieves a reference of the csrf token.
     pub fn get(&self) -> &str {
         &self.0
     }

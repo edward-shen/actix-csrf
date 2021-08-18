@@ -1,7 +1,3 @@
-//! Generators will generate a token to send back to the client
-//!
-//! It's a trait to implement so you can create your own.
-
 use base64::URL_SAFE_NO_PAD;
 use rand::{CryptoRng, Error, Fill, RngCore};
 
