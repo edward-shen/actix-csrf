@@ -38,8 +38,7 @@ impl Extractor for BasicExtractor {
             BasicExtractor::Header { ref name } => {
                 for (header_name, value) in msg.headers() {
                     if header_name.as_str().eq_ignore_ascii_case(name.as_str()) {
-                        let str_v = value.to_str().unwrap();
-                        return Ok(String::from(str_v));
+                        return Ok(String::from(value.to_str().unwrap()));
                     }
                 }
 
@@ -79,11 +78,6 @@ mod tests {
         let token = extractor.extract_token(&req);
 
         assert!(token.is_err());
-        let err = token.err().unwrap();
-        assert_eq!(
-            "The CSRF Token is missing = from csrf header",
-            format!("{}", err)
-        );
     }
 
     #[test]
@@ -109,10 +103,5 @@ mod tests {
         let token = extractor.extract_token(&req);
 
         assert!(token.is_err());
-        let err = token.err().unwrap();
-        assert_eq!(
-            "The CSRF Token is missing = from csrf header",
-            format!("{}", err)
-        );
     }
 }

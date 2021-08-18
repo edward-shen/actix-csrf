@@ -1,3 +1,6 @@
+#![deny(unsafe_code)]
+#![warn(clippy::pedantic, clippy::nursery)]
+
 //! CSRF attack mitigation.
 //!
 //! This middleware is mitigating the CSRF attacks by using the double token submit
@@ -32,7 +35,6 @@
 //! use actix_csrf::Csrf;
 //! Csrf::new().set_enabled(false);
 //! ```
-//!
 
 use actix_web::cookie::Cookie;
 use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform};
@@ -44,7 +46,7 @@ use generator::TokenRng;
 use log::error;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::default::Default;
 use std::fmt::Display;
 use std::future::{self, Future, Ready};
@@ -93,7 +95,14 @@ pub struct Csrf<Rng, Extractor> {
 
 impl Csrf<StdRng, BasicExtractor> {
     /// Create the CSRF default middleware
+    #[must_use]
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for Csrf<StdRng, BasicExtractor> {
+    fn default() -> Self {
         Self {
             inner: Inner::default(),
         }
@@ -102,7 +111,7 @@ impl Csrf<StdRng, BasicExtractor> {
 
 impl<Rng, Extractor> Csrf<Rng, Extractor> {
     /// Control whether we check for the token on requests.
-    pub fn set_enabled(mut self, enabled: bool) -> Self {
+    pub const fn set_enabled(mut self, enabled: bool) -> Self {
         self.inner.csrf_enabled = enabled;
         self
     }
@@ -121,7 +130,7 @@ impl<Rng, Extractor> Csrf<Rng, Extractor> {
 
     /// Add a whitelisted endpoint
     pub fn add_whilelist(mut self, method: Method, uri: String) -> Self {
-        self.inner.whitelist.push((method, uri));
+        self.inner.whitelist.insert((method, uri));
         self
     }
 }
@@ -164,7 +173,7 @@ struct Inner<Rng, Extractor> {
     req_extractors: HashMap<Method, Extractor>,
     /// Endpoints that are not protected by the middleware.
     /// Mapping of Method to URI.
-    whitelist: Vec<(Method, String)>,
+    whitelist: HashSet<(Method, String)>,
 }
 
 impl Default for Inner<StdRng, BasicExtractor> {
@@ -196,7 +205,7 @@ impl Default for Inner<StdRng, BasicExtractor> {
             rng: StdRng::from_entropy(),
             cookie_name: Rc::new("csrf_token".to_owned()),
             req_extractors,
-            whitelist: vec![],
+            whitelist: HashSet::new(),
             csrf_enabled: true,
         }
     }
@@ -205,21 +214,15 @@ impl Default for Inner<StdRng, BasicExtractor> {
 impl<Rng, Extractor> Inner<Rng, Extractor> {
     /// Will return true if the middleware needs to check the CSRF tokens.
     fn should_protect(&self, req: &ServiceRequest) -> bool {
-        if self.in_whilelist(&req.method(), req.path()) {
+        if self
+            .whitelist
+            .iter()
+            .any(|(method, path)| req.method() == method && req.path() == path)
+        {
             return false;
         }
 
         (self.req_extractors.contains_key(req.method())) && self.csrf_enabled
-    }
-
-    fn in_whilelist(&self, req_method: &Method, req_uri: &str) -> bool {
-        for (method, uri) in &self.whitelist {
-            if method == req_method && uri == req_uri {
-                return true;
-            }
-        }
-
-        false
     }
 
     /// Will extract the token from a cookie that was set previously.
@@ -230,22 +233,15 @@ impl<Rng, Extractor> Inner<Rng, Extractor> {
     }
 }
 
-impl<Rng: TokenRng, Extractor> Inner<Rng, Extractor> {
-    /// Generate the next token
-    fn generate_token(&mut self) -> String {
-        self.rng.generate_token()
-    }
-}
-
 impl<Rng, Extractor: extractor::Extractor> Inner<Rng, Extractor> {
     /// Will extract the matching token from the request.
     fn extract_request_token(&self, req: &ServiceRequest) -> Result<String, CsrfError> {
         // Unwrap. At this point, if we arrive here, there is no doubt we have
         // an extractor or it means there is a coding error.
         self.req_extractors
-            .get(&req.method())
+            .get(req.method())
             .unwrap()
-            .extract_token(&req)
+            .extract_token(req)
     }
 }
 
@@ -284,9 +280,19 @@ where
             }
         }
 
+        let cookie = Cookie::build(
+            self.inner.cookie_name.as_ref(),
+            self.inner.rng.generate_token().unwrap(),
+        )
+        // .http_only(true)
+        // .secure(true)
+        // .same_site(SameSite::Strict)
+        .path("/")
+        .finish();
+
         CsrfMiddlewareFuture::Passthrough(Passthrough {
-            token: self.inner.generate_token(),
-            cookie_name: Rc::clone(&self.inner.cookie_name),
+            cookie: HeaderValue::from_str(&cookie.to_string())
+                .expect("cookie to be a valid header value"),
             enabled: self.inner.csrf_enabled,
             service: Box::pin(self.service.call(req)),
         })
@@ -319,16 +325,11 @@ where
             }
             CsrfMiddlewareFuture::Passthrough(inner) => match inner.service.as_mut().poll(cx) {
                 Poll::Ready(Ok(mut res)) => {
-                    // Set the newly generated token.
-                    // TODO: Find a way to not have to clone.
-                    let mut cookie = Cookie::new(inner.cookie_name.as_ref(), inner.token.clone());
-                    cookie.set_path("/");
-
                     if inner.enabled {
-                        res.response_mut().headers_mut().insert(
-                            header::SET_COOKIE,
-                            HeaderValue::from_str(&cookie.to_string()).unwrap(),
-                        );
+                        res.response_mut()
+                            .headers_mut()
+                            // TODO: Find a way to not have to clone.
+                            .insert(header::SET_COOKIE, inner.cookie.clone());
                     }
 
                     Poll::Ready(Ok(res))
@@ -340,8 +341,7 @@ where
 }
 
 pub struct Passthrough<Fut> {
-    token: String,
-    cookie_name: Rc<String>,
+    cookie: HeaderValue,
     enabled: bool,
     service: Pin<Box<Fut>>,
 }
@@ -360,7 +360,6 @@ mod tests {
         let token_header = cookie.split('=');
         let token = token_header.skip(1).take(1).collect::<Vec<_>>()[0];
         let token = token.split(';').next().unwrap();
-        assert!(token.chars().all(char::is_alphanumeric));
         String::from(token)
     }
 
