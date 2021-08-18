@@ -15,28 +15,8 @@ use actix_web::dev::ServiceRequest;
 use actix_web::HttpMessage;
 
 /// Trait to extract token from a request.
-pub trait Extractor: ExtractorClone {
+pub trait Extractor {
     fn extract_token(&self, msg: &ServiceRequest) -> Result<String, CsrfError>;
-}
-
-// https://stackoverflow.com/questions/30353462/how-to-clone-a-struct-storing-a-boxed-trait-object/30353928#30353928
-pub trait ExtractorClone {
-    fn clone_box(&self) -> Box<Extractor>;
-}
-
-impl<T> ExtractorClone for T
-where
-    T: 'static + Extractor + Clone,
-{
-    fn clone_box(&self) -> Box<Extractor> {
-        Box::new(self.clone())
-    }
-}
-
-impl Clone for Box<Extractor> {
-    fn clone(&self) -> Box<Extractor> {
-        self.clone_box()
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -54,16 +34,16 @@ impl Extractor for BasicExtractor {
             BasicExtractor::Cookie { ref name } => msg
                 .cookie(name)
                 .map(|cookie| cookie.value().to_string())
-                .ok_or(CsrfError::MissingToken(format!("from {} cookie", name))),
+                .ok_or(CsrfError::MissingCookie),
             BasicExtractor::Header { ref name } => {
                 for (header_name, value) in msg.headers() {
-                    if header_name.as_str() == name.as_str() {
+                    if header_name.as_str().eq_ignore_ascii_case(name.as_str()) {
                         let str_v = value.to_str().unwrap();
                         return Ok(String::from(str_v));
                     }
                 }
 
-                Err(CsrfError::MissingToken(format!("from {} header", name)))
+                Err(CsrfError::MissingToken)
             }
         }
     }
