@@ -36,16 +36,17 @@
 //! Csrf::new().set_enabled(false);
 //! ```
 
-use actix_web::cookie::{Cookie, SameSite};
 use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::http::header::{self, HeaderValue};
 use actix_web::http::{Method, StatusCode};
-use actix_web::{HttpMessage, HttpResponse, ResponseError};
+use actix_web::{HttpResponse, ResponseError};
+use cookie::{Cookie, SameSite};
 use extractor::{BasicExtractor, Extractor};
 use generator::TokenRng;
 use log::error;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::default::Default;
 use std::fmt::Display;
@@ -174,13 +175,12 @@ impl<Rng, Extractor> Csrf<Rng, Extractor> {
     }
 }
 
-impl<S, Rng, Extractor> Transform<S> for Csrf<Rng, Extractor>
+impl<S, Rng, Extractor> Transform<S, ServiceRequest> for Csrf<Rng, Extractor>
 where
-    S: Service<Request = ServiceRequest, Response = ServiceResponse>,
+    S: Service<ServiceRequest, Response = ServiceResponse>,
     Rng: TokenRng + Clone,
     Extractor: crate::Extractor + Clone,
 {
-    type Request = ServiceRequest;
     type Response = ServiceResponse;
     type Error = S::Error;
     type InitError = ();
@@ -203,7 +203,7 @@ pub struct CsrfMiddleware<S, Rng, Extractor> {
 #[derive(Clone)]
 struct Inner<Rng, Extractor> {
     /// To generate the token
-    rng: Rng,
+    rng: RefCell<Rng>,
     cookie_name: Rc<String>,
     http_only: bool,
     same_site: Option<SameSite>,
@@ -245,7 +245,7 @@ impl Default for Inner<StdRng, BasicExtractor> {
         );
 
         Self {
-            rng: StdRng::from_entropy(),
+            rng: RefCell::new(StdRng::from_entropy()),
             cookie_name: Rc::new(DEFAULT_CSRF_TOKEN_NAME.to_owned()),
             req_extractors,
             csrf_enabled: true,
@@ -273,7 +273,6 @@ impl<Rng, Extractor> Inner<Rng, Extractor> {
 
     /// Will extract the token from a cookie that was set previously.
     fn extract_cookie_token(&self, req: &ServiceRequest) -> Result<String, CsrfError> {
-        dbg!(req.cookies());
         req.cookie(&self.cookie_name)
             .map(|cookie| cookie.value().to_string())
             .ok_or(CsrfError::MissingCookie)
@@ -292,18 +291,17 @@ impl<Rng, Extractor: extractor::Extractor> Inner<Rng, Extractor> {
     }
 }
 
-impl<S, Rng, Extractor> Service for CsrfMiddleware<S, Rng, Extractor>
+impl<S, Rng, Extractor> Service<ServiceRequest> for CsrfMiddleware<S, Rng, Extractor>
 where
-    S: Service<Request = ServiceRequest, Response = ServiceResponse>,
+    S: Service<ServiceRequest, Response = ServiceResponse>,
     Rng: TokenRng,
     Extractor: extractor::Extractor,
 {
-    type Request = ServiceRequest;
     type Response = ServiceResponse;
     type Error = S::Error;
     type Future = CsrfMiddlewareFuture<S>;
 
-    fn call(&mut self, req: ServiceRequest) -> Self::Future {
+    fn call(&self, req: ServiceRequest) -> Self::Future {
         // Before request, we need to check that for protected resources, the CSRF
         // tokens are actually there and matching. By default protected resources
         // are everything but GET and OPTIONS but you might want to also protect
@@ -329,7 +327,7 @@ where
         let cookie = {
             let mut cookie_builder = Cookie::build(
                 self.inner.cookie_name.as_ref(),
-                self.inner.rng.generate_token().unwrap(),
+                self.inner.rng.borrow_mut().generate_token().unwrap(),
             )
             .http_only(self.inner.http_only)
             .secure(self.inner.secure)
@@ -350,19 +348,19 @@ where
         })
     }
 
-    fn poll_ready(&mut self, ctx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&self, ctx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.service.poll_ready(ctx)
     }
 }
 
-pub enum CsrfMiddlewareFuture<S: Service<Request = ServiceRequest>> {
+pub enum CsrfMiddlewareFuture<S: Service<ServiceRequest>> {
     CsrfError(ServiceResponse),
     Passthrough(Passthrough<S::Future>),
 }
 
 impl<S> Future for CsrfMiddlewareFuture<S>
 where
-    S: Service<Request = ServiceRequest, Response = ServiceResponse>,
+    S: Service<ServiceRequest, Response = ServiceResponse>,
 {
     type Output = Result<ServiceResponse, S::Error>;
 
@@ -420,10 +418,11 @@ mod tests {
             .headers()
             .iter()
             .filter(|(header_name, _)| header_name.as_str() == "set-cookie")
-            .map(|(_, value)| String::from(value.to_str().unwrap()))
+            .map(|(_, value)| value.to_str().unwrap())
+            .map(|v| v.split(';').next().unwrap())
             .collect();
         assert_eq!(1, cookie_header.len());
-        String::from(cookie_header.get(0).unwrap().as_str())
+        String::from(*cookie_header.get(0).unwrap())
     }
 
     // Check that the CSRF token is correctly attached to the response
@@ -490,13 +489,11 @@ mod tests {
     #[tokio::test]
     async fn double_submit_correct_token() {
         let mut srv = test::init_service(
-            App::new()
-                .wrap(Csrf::new().secure(false).same_site(None))
-                .service(
-                    web::resource("/")
-                        .route(web::get().to(|| HttpResponse::Ok()))
-                        .route(web::post().to(|| HttpResponse::Ok())),
-                ),
+            App::new().wrap(Csrf::new()).service(
+                web::resource("/")
+                    .route(web::get().to(|| HttpResponse::Ok()))
+                    .route(web::post().to(|| HttpResponse::Ok())),
+            ),
         )
         .await;
 
@@ -511,8 +508,8 @@ mod tests {
         // Now we can do another request to a protected endpoint.
         let req = TestRequest::post()
             .uri("/")
-            .header("Cookie", cookie)
-            .header(DEFAULT_CSRF_TOKEN_NAME, token)
+            .insert_header(("Cookie", cookie))
+            .insert_header((DEFAULT_CSRF_TOKEN_NAME, token))
             .to_request();
 
         dbg!(&req);

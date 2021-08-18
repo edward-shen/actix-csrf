@@ -12,7 +12,6 @@
 
 use crate::CsrfError;
 use actix_web::dev::ServiceRequest;
-use actix_web::HttpMessage;
 
 /// Trait to extract token from a request.
 pub trait Extractor {
@@ -61,7 +60,9 @@ mod tests {
             name: String::from("csrf"),
         };
 
-        let req = TestRequest::with_header("csrf", "sometoken").to_srv_request();
+        let req = TestRequest::default()
+            .insert_header(("csrf", "sometoken"))
+            .to_srv_request();
         let token = extractor.extract_token(&req);
 
         assert!(token.is_ok());
@@ -74,7 +75,9 @@ mod tests {
             name: String::from("csrf"),
         };
 
-        let req = TestRequest::with_header("fake", "sometoken").to_srv_request();
+        let req = TestRequest::default()
+            .insert_header(("fake", "sometoken"))
+            .to_srv_request();
         let token = extractor.extract_token(&req);
 
         assert!(token.is_err());
@@ -82,7 +85,9 @@ mod tests {
 
     #[test]
     fn extract_from_cookie() {
-        let req = TestRequest::with_header(header::COOKIE, "csrf=sometoken").to_srv_request();
+        let req = TestRequest::default()
+            .insert_header((header::COOKIE, "csrf=sometoken"))
+            .to_srv_request();
 
         let extractor = BasicExtractor::Cookie {
             name: String::from("csrf"),
@@ -99,7 +104,9 @@ mod tests {
             name: String::from("csrf"),
         };
 
-        let req = TestRequest::with_header("fake", "sometoken").to_srv_request();
+        let req = TestRequest::default()
+            .insert_header(("fake", "sometoken"))
+            .to_srv_request();
         let token = extractor.extract_token(&req);
 
         assert!(token.is_err());
