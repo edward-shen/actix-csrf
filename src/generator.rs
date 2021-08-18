@@ -10,9 +10,10 @@ pub trait TokenRng {
 
 impl<Rng: CryptoRng + RngCore> TokenRng for Rng {
     fn generate_token(&mut self) -> String {
-        let chars = (0..32).map(|_| self.sample(Alphanumeric)).collect();
-        // SAFETY: self.sample(Alphanumeric) will return valid ASCII, so the vec
-        // will always be valid UTF-8.
-        unsafe { String::from_utf8_unchecked(chars) }
+        let mut chars = String::with_capacity(32);
+        for _ in 0..32 {
+            chars.push(self.sample(Alphanumeric) as char);
+        }
+        chars
     }
 }
