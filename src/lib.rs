@@ -40,6 +40,8 @@ use actix_web::http::header::{self, HeaderValue};
 use actix_web::http::{Method, StatusCode};
 use actix_web::{Either, HttpMessage, HttpResponse, ResponseError};
 use log::error;
+use rand::prelude::StdRng;
+use rand::{CryptoRng, SeedableRng};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::default::Default;
@@ -84,18 +86,20 @@ impl ResponseError for CsrfError {
 
 /// Middleware builder. The default will check CSRF on every request but
 /// GET and POST. You can specify whether to disable.
-pub struct Csrf {
-    inner: Inner,
+pub struct Csrf<Rng> {
+    inner: Inner<Rng>,
 }
 
-impl Csrf {
+impl Csrf<StdRng> {
     /// Create the CSRF default middleware
     pub fn new() -> Self {
         Self {
             inner: Inner::default(),
         }
     }
+}
 
+impl<Rng> Csrf<Rng> {
     /// Control whether we check for the token on requests.
     pub fn set_enabled(mut self, enabled: bool) -> Self {
         self.inner.csrf_enabled = enabled;
@@ -124,15 +128,16 @@ impl Csrf {
     }
 }
 
-impl<S> Transform<S> for Csrf
+impl<S, Rng> Transform<S> for Csrf<Rng>
 where
     S: Service<Request = ServiceRequest, Response = ServiceResponse>,
+    Rng: Clone,
 {
     type Request = ServiceRequest;
     type Response = ServiceResponse;
     type Error = S::Error;
     type InitError = ();
-    type Transform = CsrfMiddleware<S>;
+    type Transform = CsrfMiddleware<S, Rng>;
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
@@ -143,15 +148,15 @@ where
     }
 }
 
-pub struct CsrfMiddleware<S> {
+pub struct CsrfMiddleware<S, Rng> {
     service: S,
-    inner: Inner,
+    inner: Inner<Rng>,
 }
 
 #[derive(Clone)]
-struct Inner {
+struct Inner<Rng> {
     /// To generate the token
-    generator: Box<generator::Generator>,
+    generator: Rng,
 
     cookie_name: String,
 
@@ -167,10 +172,10 @@ struct Inner {
     whitelist: Vec<(Method, String)>,
 }
 
-impl Default for Inner {
+impl Default for Inner<StdRng> {
     fn default() -> Self {
         // sane defaults?
-        let generator = Box::new(generator::RandGenerator::new());
+        let generator = StdRng::from_entropy();
         let mut req_extractors: HashMap<Method, Box<extractor::Extractor>> = HashMap::new();
         let cookie_name = String::from("csrfToken");
         req_extractors.insert(
@@ -204,7 +209,7 @@ impl Default for Inner {
     }
 }
 
-impl Inner {
+impl<Rng> Inner<Rng> {
     /// Will return true if the middleware needs to check the CSRF tokens.
     fn should_protect(&self, req: &ServiceRequest) -> bool {
         if self.in_whilelist(&req.method(), req.path()) {
@@ -222,11 +227,6 @@ impl Inner {
         }
 
         false
-    }
-
-    /// Generate the next token
-    fn generate_token(&mut self) -> String {
-        self.generator.generate_token()
     }
 
     /// Will extract the token from a cookie that was set previously.
@@ -247,7 +247,15 @@ impl Inner {
     }
 }
 
-impl<S> Service for CsrfMiddleware<S>
+impl<Rng: CryptoRng> Inner<Rng> {
+    /// Generate the next token
+    fn generate_token(&mut self) -> String {
+        todo!();
+        // self.generator.generate_token()
+    }
+}
+
+impl<S, Rng> Service for CsrfMiddleware<S, Rng>
 where
     S: Service<Request = ServiceRequest, Response = ServiceResponse>,
 {
