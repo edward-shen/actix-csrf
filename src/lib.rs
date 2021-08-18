@@ -1,5 +1,5 @@
 #![deny(unsafe_code)]
-#![warn(clippy::pedantic, clippy::nursery)]
+#![warn(clippy::pedantic, clippy::nursery, missing_docs)]
 
 //! CSRF attack mitigation.
 //!
@@ -33,32 +33,40 @@
 //! You can deactivate the protection (for example for dev mode or unit tests.
 //! ```
 //! use actix_csrf::Csrf;
-//! Csrf::new().set_enabled(false);
+//! Csrf::new().enabled(false);
 //! ```
 
 use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::http::header::{self, HeaderValue};
-use actix_web::http::{Method, StatusCode};
+use actix_web::http::Method;
 use actix_web::{HttpResponse, ResponseError};
 use cookie::{Cookie, SameSite};
-use extractor::{BasicExtractor, Extractor};
+use extractor::{CsrfCookie, CsrfHeader};
 use generator::TokenRng;
-use log::error;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::default::Default;
+use std::error::Error;
 use std::fmt::Display;
 use std::future::{self, Future, Ready};
 use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll};
+use tracing::warn;
 
 pub mod extractor;
 pub mod generator;
 
-const DEFAULT_CSRF_TOKEN_NAME: &str = "Csrf-Token";
+macro_rules! token_name {
+    () => {
+        "Csrf-Token"
+    };
+}
+
+const DEFAULT_CSRF_TOKEN_NAME: &str = token_name!();
+const DEFAULT_CSRF_COOKIE_NAME: &str = concat!("__HOST-", token_name!());
 
 /// Internal errors that can happen when processing CSRF tokens.
 #[derive(Debug)]
@@ -83,20 +91,20 @@ impl Display for CsrfError {
 
 impl ResponseError for CsrfError {
     fn error_response(&self) -> HttpResponse {
-        // I don't really want to leak the error to the client. But I need
-        // to log it as CSRF attacks are a thing.
-        error!("{}", self);
-        HttpResponse::with_body(StatusCode::BAD_REQUEST, "CSRF Error".into())
+        warn!("Potential CSRF attack: {}", self);
+        HttpResponse::BadRequest().finish()
     }
 }
 
+impl Error for CsrfError {}
+
 /// Middleware builder. The default will check CSRF on every request but
 /// GET and POST. You can specify whether to disable.
-pub struct Csrf<Rng, Extractor> {
-    inner: Inner<Rng, Extractor>,
+pub struct Csrf<Rng> {
+    inner: Inner<Rng>,
 }
 
-impl Csrf<StdRng, BasicExtractor> {
+impl Csrf<StdRng> {
     /// Creates a CSRF middleware with secure defaults. Namely:
     ///
     /// - The CSRF cookie will be prefixed with `__HOST-`
@@ -107,15 +115,15 @@ impl Csrf<StdRng, BasicExtractor> {
     ///
     /// This represents the strictest possible configuration. As a result,
     /// requests must be sent over HTTPS, even in development scenarios. Users
-    /// must explicitly relax these restrictions. This is so users explicitly
-    /// weaken the security stance.
+    /// must explicitly relax these restrictions. This is so users must
+    /// explicitly weaken the security stance.
     #[must_use]
     pub fn new() -> Self {
-        Self::default().cookie_name(format!("__HOST-{}", DEFAULT_CSRF_TOKEN_NAME))
+        Self::default().cookie_name(DEFAULT_CSRF_COOKIE_NAME.to_string())
     }
 }
 
-impl Default for Csrf<StdRng, BasicExtractor> {
+impl Default for Csrf<StdRng> {
     fn default() -> Self {
         Self {
             inner: Inner::default(),
@@ -123,68 +131,55 @@ impl Default for Csrf<StdRng, BasicExtractor> {
     }
 }
 
-impl<Rng, Extractor> Csrf<Rng, Extractor> {
+impl<Rng> Csrf<Rng> {
     /// Control whether we check for the token on requests.
-    pub const fn set_enabled(mut self, enabled: bool) -> Self {
+    pub const fn enabled(mut self, enabled: bool) -> Self {
         self.inner.csrf_enabled = enabled;
         self
     }
 
-    /// Add an extractor for the specified method.
-    pub fn add_extractor(mut self, method: Method, extractor: Extractor) -> Self {
-        self.inner.req_extractors.insert(method, extractor);
-        self
-    }
-
-    /// Replace all the extractors
-    pub fn set_extractors(mut self, extractors: HashMap<Method, Extractor>) -> Self {
-        self.inner.req_extractors = extractors;
-        self
-    }
-
-    /// Add a whitelisted endpoint
-    pub fn add_whilelist(mut self, method: Method, uri: String) -> Self {
-        self.inner.whitelist.insert((method, uri));
+    /// Exclude a method and path from CSRF protection.
+    pub fn exclude(mut self, method: Method, uri: impl ToString) -> Self {
+        self.inner.excluded.insert((method, uri.to_string()));
         self
     }
 
     /// Sets the cookie name. Consider prefixing the cookie name with `__Host-`
     /// or `__Secure-` as an additional defense-in-depth measure against CSRF
     /// attacks.
-    pub fn cookie_name(mut self, name: String) -> Self {
-        self.inner.cookie_name = Rc::new(name);
+    pub fn cookie_name(mut self, name: impl ToString) -> Self {
+        self.inner.cookie_name = Rc::new(name.to_string());
         self
     }
 
     /// Sets the `SameSite` attribute on the cookie.
-    pub fn same_site(mut self, same_site: Option<SameSite>) -> Self {
+    pub const fn same_site(mut self, same_site: Option<SameSite>) -> Self {
         self.inner.same_site = same_site;
         self
     }
 
     /// Sets the `HttpOnly` attribute on the cookie.
-    pub fn http_only(mut self, enabled: bool) -> Self {
+    pub const fn http_only(mut self, enabled: bool) -> Self {
         self.inner.http_only = enabled;
         self
     }
 
     /// Sets the `Secure` attribute on the cookie.
-    pub fn secure(mut self, enabled: bool) -> Self {
+    pub const fn secure(mut self, enabled: bool) -> Self {
         self.inner.secure = enabled;
         self
     }
 }
 
-impl<S, Rng, Extractor> Transform<S, ServiceRequest> for Csrf<Rng, Extractor>
+impl<S, Rng> Transform<S, ServiceRequest> for Csrf<Rng>
 where
     S: Service<ServiceRequest, Response = ServiceResponse>,
     Rng: TokenRng + Clone,
-    Extractor: crate::Extractor + Clone,
 {
     type Response = ServiceResponse;
     type Error = S::Error;
     type InitError = ();
-    type Transform = CsrfMiddleware<S, Rng, Extractor>;
+    type Transform = CsrfMiddleware<S, Rng>;
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
@@ -195,13 +190,14 @@ where
     }
 }
 
-pub struct CsrfMiddleware<S, Rng, Extractor> {
+#[doc(hidden)]
+pub struct CsrfMiddleware<S, Rng> {
     service: S,
-    inner: Inner<Rng, Extractor>,
+    inner: Inner<Rng>,
 }
 
 #[derive(Clone)]
-struct Inner<Rng, Extractor> {
+struct Inner<Rng> {
     /// To generate the token
     rng: RefCell<Rng>,
     cookie_name: Rc<String>,
@@ -211,91 +207,44 @@ struct Inner<Rng, Extractor> {
 
     /// If false, will not check at all for CSRF tokens
     csrf_enabled: bool,
-    /// Extract the token from an incoming HTTP request. One extractor
-    /// per Method.
-    req_extractors: HashMap<Method, Extractor>,
     /// Endpoints that are not protected by the middleware.
     /// Mapping of Method to URI.
-    whitelist: HashSet<(Method, String)>,
+    excluded: HashSet<(Method, String)>,
 }
 
-impl Default for Inner<StdRng, BasicExtractor> {
+impl Default for Inner<StdRng> {
     fn default() -> Self {
-        // sane defaults?
-        let mut req_extractors = HashMap::with_capacity(3);
-        req_extractors.insert(
-            Method::POST,
-            BasicExtractor::Header {
-                name: DEFAULT_CSRF_TOKEN_NAME.to_owned(),
-            },
-        );
-
-        req_extractors.insert(
-            Method::PUT,
-            BasicExtractor::Header {
-                name: DEFAULT_CSRF_TOKEN_NAME.to_owned(),
-            },
-        );
-
-        req_extractors.insert(
-            Method::DELETE,
-            BasicExtractor::Header {
-                name: DEFAULT_CSRF_TOKEN_NAME.to_owned(),
-            },
-        );
-
         Self {
             rng: RefCell::new(StdRng::from_entropy()),
-            cookie_name: Rc::new(DEFAULT_CSRF_TOKEN_NAME.to_owned()),
-            req_extractors,
+            cookie_name: Rc::new(DEFAULT_CSRF_COOKIE_NAME.to_owned()),
             csrf_enabled: true,
             http_only: true,
             same_site: Some(SameSite::Strict),
             secure: true,
-            whitelist: HashSet::new(),
+            excluded: HashSet::new(),
         }
     }
 }
 
-impl<Rng, Extractor> Inner<Rng, Extractor> {
+impl<Rng> Inner<Rng> {
     /// Will return true if the middleware needs to check the CSRF tokens.
     fn should_protect(&self, req: &ServiceRequest) -> bool {
         if self
-            .whitelist
+            .excluded
             .iter()
             .any(|(method, path)| req.method() == method && req.path() == path)
         {
             return false;
         }
 
-        self.req_extractors.contains_key(req.method()) && self.csrf_enabled
-    }
-
-    /// Will extract the token from a cookie that was set previously.
-    fn extract_cookie_token(&self, req: &ServiceRequest) -> Result<String, CsrfError> {
-        req.cookie(&self.cookie_name)
-            .map(|cookie| cookie.value().to_string())
-            .ok_or(CsrfError::MissingCookie)
+        matches!(*req.method(), Method::POST | Method::PATCH | Method::DELETE) && self.csrf_enabled
     }
 }
 
-impl<Rng, Extractor: extractor::Extractor> Inner<Rng, Extractor> {
-    /// Will extract the matching token from the request.
-    fn extract_request_token(&self, req: &ServiceRequest) -> Result<String, CsrfError> {
-        // Unwrap. At this point, if we arrive here, there is no doubt we have
-        // an extractor or it means there is a coding error.
-        self.req_extractors
-            .get(req.method())
-            .unwrap()
-            .extract_token(req)
-    }
-}
-
-impl<S, Rng, Extractor> Service<ServiceRequest> for CsrfMiddleware<S, Rng, Extractor>
+impl<S, Rng> Service<ServiceRequest> for CsrfMiddleware<S, Rng>
 where
     S: Service<ServiceRequest, Response = ServiceResponse>,
     Rng: TokenRng,
-    Extractor: extractor::Extractor,
 {
     type Response = ServiceResponse;
     type Error = S::Error;
@@ -308,14 +257,16 @@ where
         // GET if it has server side effects.
         if self.inner.should_protect(&req) {
             // First make sure the tokens are both here
-            let cookie_token = self.inner.extract_cookie_token(&req);
-            let req_token = self.inner.extract_request_token(&req);
+            let cookie_token = CsrfCookie::from_service_request(&self.inner.cookie_name, &req);
+            let req_token = CsrfHeader::from_service_request(DEFAULT_CSRF_TOKEN_NAME, &req);
 
             match (cookie_token, req_token) {
                 (Err(e), _) | (_, Err(e)) => {
                     return CsrfMiddlewareFuture::CsrfError(req.error_response(e));
                 }
-                (Ok(ref cookie_token), Ok(ref req_token)) if cookie_token != req_token => {
+                (Ok(cookie_token), Ok(req_token))
+                    if cookie_token.as_ref() != req_token.as_ref() =>
+                {
                     return CsrfMiddlewareFuture::CsrfError(
                         req.error_response(CsrfError::TokenMismatch),
                     );
@@ -353,8 +304,11 @@ where
     }
 }
 
+#[doc(hidden)]
 pub enum CsrfMiddlewareFuture<S: Service<ServiceRequest>> {
+    /// A CSRF issue was detected.
     CsrfError(ServiceResponse),
+    /// No CSRF issue was detected, so we pass the request through.
     Passthrough(Passthrough<S::Future>),
 }
 
@@ -390,6 +344,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub struct Passthrough<Fut> {
     cookie: HeaderValue,
     enabled: bool,
@@ -448,7 +403,7 @@ mod tests {
         assert!(cookie_header
             .get(0)
             .unwrap()
-            .contains(&format!("__HOST-{}", DEFAULT_CSRF_TOKEN_NAME)));
+            .contains(DEFAULT_CSRF_COOKIE_NAME));
     }
 
     // With default protection, POST requests is rejected.
@@ -469,7 +424,7 @@ mod tests {
     async fn test_post_accepted_with_disabled() {
         let mut srv = test::init_service(
             App::new()
-                .wrap(Csrf::new().set_enabled(false))
+                .wrap(Csrf::new().enabled(false))
                 .service(web::resource("/").route(web::post().to(|| HttpResponse::Ok()))),
         )
         .await;
@@ -521,7 +476,7 @@ mod tests {
     async fn test_whitelist() {
         let mut srv = test::init_service(
             App::new()
-                .wrap(Csrf::new().add_whilelist(Method::POST, "/".to_string()))
+                .wrap(Csrf::new().exclude(Method::POST, "/"))
                 .service(web::resource("/").route(web::post().to(|| HttpResponse::Ok()))),
         )
         .await;
@@ -539,6 +494,6 @@ mod tests {
         assert!(cookie_header
             .get(0)
             .unwrap()
-            .contains(&format!("__HOST-{}", DEFAULT_CSRF_TOKEN_NAME)));
+            .contains(DEFAULT_CSRF_COOKIE_NAME));
     }
 }
