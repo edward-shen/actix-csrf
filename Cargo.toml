@@ -8,6 +8,7 @@ repository = "https://github.com/edward-shen/actix-csrf"
 license = "MIT OR Apache-2.0"
 keywords = ["actix", "middleware", "csrf"]
 categories = ["web-programming::http-server"]
+include = ["src/**/*", "LICENSE-*", "README.md"]
 
 [dependencies]
 actix-web = { version = "4.0.0-beta.8", default_features = false, features = [ "cookies" ] }
