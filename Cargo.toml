@@ -1,6 +1,6 @@
 [package]
 name = "actix-csrf"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Edward Shen <code@eddie.sh>", "Benoit Eudier <benoit.eudier@gmail.com>"]
 edition = "2018"
 description = "CSRF middleware for Actix"
@@ -16,9 +16,10 @@ base64 = "0.13"
 cookie = "0.15"
 rand = { version = "0.8", features = [ "std_rng" ] }
 tracing = "0.1"
+serde = { version = "1", features = [ "derive" ], optional = true }
 
 [dev-dependencies]
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1", features = [ "derive" ] }
 tokio = { version = "1", features = [ "macros", "rt-multi-thread" ] }
 
 [profile.release]
