@@ -3,6 +3,8 @@
 CSRF middleware for [actix-web] 4.0.0 or newer that uses the Double-Submit Token
 pattern.
 
+_This crate has not yet been audited. Use in production at your own risk._
+
 ## Usage
 
 Installing the middleware is standard: Specify a cryptographically secure RNG to
@@ -57,6 +59,13 @@ This is only one of many ways to use the Double-Submit Token pattern; see the
 
 ## Security Considerations
 
+There are advantages and limitations to using the Double Submit Token pattern.
+Users are highly recommended to read the [Owasp article on CSRF Protection][csrf]
+before using this middleware.
+
+This crate attempts to have secure defaults, and users must explicitly disable
+defense-in-depth features.
+
 ## License
 
 Licensed under either of
@@ -76,3 +85,4 @@ dual licensed as above, without any additional terms or conditions.
 
 [actix-web]: https://github.com/actix/actix-web
 [docs]: https://docs.rs/actix-csrf/latest/actix_csrf/
+[csrf]: https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html
