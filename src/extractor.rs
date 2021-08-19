@@ -5,17 +5,16 @@ use std::future::{ready, Ready};
 use crate::{CsrfError, DEFAULT_CSRF_COOKIE_NAME, DEFAULT_CSRF_TOKEN_NAME};
 
 use actix_web::dev::{Payload, ServiceRequest};
-use actix_web::http::HeaderValue;
 use actix_web::{FromRequest, HttpRequest};
 
 /// Extractor to get the CSRF header from the request.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub struct CsrfHeader(HeaderValue);
+pub struct CsrfHeader(String);
 
 impl CsrfHeader {
     /// Checks if the header matches the CSRF header.
-    pub fn validate(&self, header_value: impl AsRef<[u8]>) -> bool {
-        self.0.as_ref() == header_value.as_ref()
+    pub fn validate(&self, header_value: impl AsRef<str>) -> bool {
+        self.0 == header_value.as_ref()
     }
 }
 
@@ -30,10 +29,19 @@ impl FromRequest for CsrfHeader {
             .map_or(DEFAULT_CSRF_TOKEN_NAME, |v| v.header_name.as_ref());
 
         if let Some(header) = req.headers().get(header_name) {
-            return ready(Ok(Self(header.clone())));
+            return match header.to_str() {
+                Ok(header) => ready(Ok(Self(header.to_string()))),
+                Err(_) => ready(Err(CsrfError::MissingToken)),
+            };
         }
 
         ready(Err(CsrfError::MissingCookie))
+    }
+}
+
+impl AsRef<str> for CsrfHeader {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
     }
 }
 
@@ -54,6 +62,12 @@ impl Default for CsrfHeaderConfig {
 /// Extractor to get the CSRF cookie from the request.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct CsrfCookie(String);
+
+impl AsRef<str> for CsrfCookie {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
+    }
+}
 
 impl CsrfCookie {
     pub(crate) fn from_service_request(

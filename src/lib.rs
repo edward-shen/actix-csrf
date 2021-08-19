@@ -370,8 +370,10 @@ where
         };
 
         let cookie = if self.inner.csrf_enabled
-            && dbg!(&self.inner.set_cookie)
-                .contains(dbg!(&(req.method().clone(), req.path().to_string())))
+            && self
+                .inner
+                .set_cookie
+                .contains(&(req.method().clone(), req.path().to_string()))
         {
             req.extensions_mut().insert(CsrfToken(token));
             Some(
