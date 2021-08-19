@@ -26,6 +26,7 @@ dependencies = [
  "base64",
  "cookie",
  "rand",
+ "serde",
  "tokio",
  "tracing",
 ]

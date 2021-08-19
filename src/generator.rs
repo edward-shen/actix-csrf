@@ -1,3 +1,5 @@
+//! Token generators and related crypto functions.
+
 use base64::URL_SAFE_NO_PAD;
 use rand::{CryptoRng, Error, Fill, RngCore};
 
@@ -10,7 +12,8 @@ use rand::{CryptoRng, Error, Fill, RngCore};
 /// implications.
 ///
 /// Implementors of this trait should generate a token that's difficult to
-/// guess. For blanket implementations, this is 32 bytes of random data.
+/// guess, and is safe to store as a cookie. For blanket implementations, this
+/// is 32 bytes of random data, encoded as base64 without padding.
 pub trait TokenRng: CryptoRng {
     /// Generates a CSRF token.
     fn generate_token(&mut self) -> Result<String, Error>;
