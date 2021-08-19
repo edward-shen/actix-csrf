@@ -355,26 +355,28 @@ where
             }
         }
 
-        let token = self.inner.rng.borrow_mut().generate_token().unwrap();
-        let cookie = {
-            let mut cookie_builder = Cookie::build(self.inner.cookie_name.as_ref(), token.clone())
-                .http_only(self.inner.http_only)
-                .secure(self.inner.secure)
-                .path("/");
-
-            if let Some(same_site) = self.inner.same_site {
-                cookie_builder = cookie_builder.same_site(same_site);
-            }
-
-            cookie_builder.finish()
-        };
-
         let cookie = if self.inner.csrf_enabled
             && self
                 .inner
                 .set_cookie
                 .contains(&(req.method().clone(), req.path().to_string()))
         {
+            let token = self.inner.rng.borrow_mut().generate_token().unwrap();
+
+            let cookie = {
+                let mut cookie_builder =
+                    Cookie::build(self.inner.cookie_name.as_ref(), token.clone())
+                        .http_only(self.inner.http_only)
+                        .secure(self.inner.secure)
+                        .path("/");
+
+                if let Some(same_site) = self.inner.same_site {
+                    cookie_builder = cookie_builder.same_site(same_site);
+                }
+
+                cookie_builder.finish()
+            };
+
             req.extensions_mut().insert(CsrfToken(token));
             Some(
                 HeaderValue::from_str(&cookie.to_string())
