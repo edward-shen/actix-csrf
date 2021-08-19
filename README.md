@@ -1,47 +1,61 @@
 # actix-csrf
 
-CSRF middleware for [actix-web] 4.0.0 or newer.
-
-## Mitigation technique
-
-Right now, the middleware will used token-based mitigations. In particular, double token
-submit is implemented and I'd like to also use the synchronizer token pattern.
-
-Please take a look at [https://github.com/OWASP/CheatSheetSeries/blob/master/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.md](here) for a lot of details.
-In particular, it describes the conditions in which Double submit cookie is safer:
-```
-So, unless you are sure that your subdomains are fully secured and only accept HTTPS connections (we believe it’s difficult to guarantee at large enterprises), you should not rely on the Double Submit Cookie technique as a primary mitigation for CSRF.
-```
+CSRF middleware for [actix-web] 4.0.0 or newer that uses the Double-Submit Token
+pattern.
 
 ## Usage
 
-Basic usage is
+Installing the middleware is standard: Specify a cryptographically secure RNG to
+use, and declare which paths should set a CSRF cookie and when should validate a
+CSRF cookie.
 
 ```rust
-use actix_csrf::Csrf;
-use actix_web::{HttpServer, web, App, HttpResponse};
-
-// switch off during testing to not check CSRF
-let enabled = true;
-
-let server = HttpServer::new(move || {
-    App::new()
-        .wrap(Csrf::new().enable(enabled))
-        .service(web::resource("/")
-            // by default will not check get
-            .route(web::get().to(|| HttpResponse::Ok()))
-            // by default will check post
-            .route(web::post().to(|| HttpResponse::Ok())))
-});
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    HttpServer::new(|| {
+        let csrf = Csrf::<StdRng>::new()
+            .set_cookie(Method::GET, "/login")
+            .validate_cookie(Method::POST, "/login");
+        App::new().wrap(csrf).service(login_ui).service(login)
+    })
+    .bind(("127.0.0.1", 8080))?
+    .run()
+    .await
+}
 ```
 
+Then, use the `CsrfCookie` extractor to pull the CSRF cookie and validate it
+with a CSRF token provided as part of the protected request.
 
-## Roadmap
+```rust
+#[derive(Deserialize)]
+struct LoginForm {
+    csrf_token: String,
+    username: String,
+    password: String,
+}
 
-- More flexibility (add whitelist, other ways of extracting token)
-- Implement synchronizer token pattern. This will most likely need the session middleware in combinaison with a template language such as askama.
-- More testing
+/// Validates a login form that has a CSRF token.
+#[post("/login")]
+async fn login(cookie: CsrfCookie, form: Form<LoginForm>) -> impl Responder {
+    // As inputs for the double submit pattern heavily varies, the middleware
+    // will not validate automatically validate CSRF tokens by itself. Callers
+    // should validate this manually, as shown.
+    if !cookie.validate(&form.csrf_token) {
+        return HttpResponse::BadRequest().finish();
+    }
 
+    // At this point, we have a valid CSRF token, so we can treat the request
+    // as legitimate.
+
+    HttpResponse::Ok().finish()
+}
+```
+
+This is only one of many ways to use the Double-Submit Token pattern; see the
+[docs] and [examples](examples) for more information.
+
+## Security Considerations
 
 ## License
 
@@ -59,3 +73,6 @@ at your option.
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
 dual licensed as above, without any additional terms or conditions.
+
+[actix-web]: https://github.com/actix/actix-web
+[docs]: https://docs.rs/actix-csrf/latest/actix_csrf/
