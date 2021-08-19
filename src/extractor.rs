@@ -119,7 +119,7 @@ impl Default for CsrfCookieConfig {
 
 /// Extractor to get the CSRF token that will be set as a cookie.
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CsrfToken(pub(crate) String);
 
 impl CsrfToken {
