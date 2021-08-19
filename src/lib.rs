@@ -1,5 +1,5 @@
 #![deny(unsafe_code)]
-#![warn(clippy::pedantic, clippy::nursery, missing_docs)]
+#![warn(clippy::pedantic, clippy::nursery, clippy::cargo, missing_docs)]
 
 //! This crate provides a CSRF middleware to help protect endpoints.
 //!

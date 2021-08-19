@@ -16,6 +16,10 @@ use rand::{CryptoRng, Error, Fill, RngCore};
 /// is 32 bytes of random data, encoded as base64 without padding.
 pub trait TokenRng: CryptoRng {
     /// Generates a CSRF token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying RNG fails to generate a token.
     fn generate_token(&mut self) -> Result<String, Error>;
 }
 
