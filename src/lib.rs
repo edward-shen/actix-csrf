@@ -115,14 +115,15 @@ use std::task::{Context, Poll};
 use crate::extractor::CsrfToken;
 
 use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform};
+use actix_web::error::InternalError;
 use actix_web::http::header::{self, HeaderValue};
-use actix_web::http::Method;
+use actix_web::http::{Method, StatusCode};
 use actix_web::{HttpMessage, HttpResponse, ResponseError};
 use cookie::{Cookie, SameSite};
 use extractor::CsrfCookie;
 use generator::TokenRng;
 use rand::SeedableRng;
-use tracing::warn;
+use tracing::{error, warn};
 
 pub mod extractor;
 pub mod generator;
@@ -361,7 +362,16 @@ where
                 .set_cookie
                 .contains(&(req.method().clone(), req.path().to_string()))
         {
-            let token = self.inner.rng.borrow_mut().generate_token().unwrap();
+            let token =
+                match self.inner.rng.borrow_mut().generate_token() {
+                    Ok(token) => token,
+                    Err(e) => {
+                        error!("Failed to generate CSRF token, aborting request");
+                        return CsrfMiddlewareFuture::CsrfError(req.error_response(
+                            InternalError::new(e, StatusCode::INTERNAL_SERVER_ERROR),
+                        ));
+                    }
+                };
 
             let cookie = {
                 let mut cookie_builder =
@@ -378,10 +388,13 @@ where
             };
 
             req.extensions_mut().insert(CsrfToken(token));
-            Some(
-                HeaderValue::from_str(&cookie.to_string())
-                    .expect("cookie to be a valid header value"),
-            )
+
+            // The characters allowed in a cookie should be a strict subset
+            // of the characters allowed in a header, so this should never
+            // fail.
+            let header = HeaderValue::from_str(&cookie.to_string())
+                .expect("cookie to be a valid header value");
+            Some(header)
         } else {
             None
         };
@@ -459,7 +472,7 @@ mod tests {
         // should be something like "Csrf-Token=NHMWzEq7nAFZR56jnanhFv6WJdeEAyhy; Path=/"
         let token_header = cookie.split('=');
         let token = token_header.skip(1).take(1).collect::<Vec<_>>()[0];
-        let token = token.split(';').next().unwrap();
+        let token = token.split(';').next().expect("split to work");
         String::from(token)
     }
 
@@ -468,11 +481,11 @@ mod tests {
             .headers()
             .iter()
             .filter(|(header_name, _)| header_name.as_str() == "set-cookie")
-            .map(|(_, value)| value.to_str().unwrap())
-            .map(|v| v.split(';').next().unwrap())
+            .map(|(_, value)| value.to_str().expect("header to be valid string"))
+            .map(|v| v.split(';').next().expect("split to work"))
             .collect();
         assert_eq!(1, cookie_header.len());
-        String::from(*cookie_header.get(0).unwrap())
+        String::from(*cookie_header.get(0).expect("header to have cookie"))
     }
 
     // Check that the CSRF token is correctly attached to the response
@@ -488,17 +501,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
 
         // Cookie should be in the response.
-        let cookie_header: Vec<_> = resp
-            .headers()
-            .iter()
-            .filter(|(header_name, _)| header_name.as_str() == "set-cookie")
-            .map(|(_, value)| String::from(value.to_str().unwrap()))
-            .collect();
-        assert_eq!(1, cookie_header.len());
-        assert!(cookie_header
-            .get(0)
-            .unwrap()
-            .contains(DEFAULT_CSRF_COOKIE_NAME));
+        assert!(get_cookie_from_resp(&resp).contains(DEFAULT_CSRF_COOKIE_NAME));
     }
 
     // With default protection, POST requests is rejected.
@@ -533,10 +536,9 @@ mod tests {
             .headers()
             .iter()
             .filter(|(header_name, _)| header_name.as_str() == "set-cookie")
-            .map(|(_, value)| String::from(value.to_str().unwrap()))
             .collect();
 
-        assert_eq!(0, cookie_header.len());
+        assert!(cookie_header.is_empty());
     }
 
     /// Will use double submit method.
@@ -576,29 +578,4 @@ mod tests {
         let resp = test::call_service(&mut srv, req).await;
         assert_eq!(resp.status(), StatusCode::OK);
     }
-
-    // #[tokio::test]
-    // async fn test_whitelist() {
-    //     let mut srv = test::init_service(
-    //         App::new()
-    //             .wrap(Csrf::new().set(Method::POST, "/"))
-    //             .service(web::resource("/").route(web::post().to(|| HttpResponse::Ok()))),
-    //     )
-    //     .await;
-    //     let resp = test::call_service(&mut srv, TestRequest::post().uri("/").to_request()).await;
-    //     assert_eq!(resp.status(), StatusCode::OK);
-
-    //     // Cookie should be in the response.
-    //     let cookie_header: Vec<_> = resp
-    //         .headers()
-    //         .iter()
-    //         .filter(|(header_name, _)| header_name.as_str() == "set-cookie")
-    //         .map(|(_, value)| String::from(value.to_str().unwrap()))
-    //         .collect();
-    //     assert_eq!(1, cookie_header.len());
-    //     assert!(cookie_header
-    //         .get(0)
-    //         .unwrap()
-    //         .contains(DEFAULT_CSRF_COOKIE_NAME));
-    // }
 }

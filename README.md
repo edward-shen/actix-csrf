@@ -1,13 +1,13 @@
 # actix-csrf
-Middleware for Actix-web 1.0 to add CSRF attack mitigation.
-It is early work so please don't hesitate to contribute.
 
-## Mitigation techniques
+CSRF middleware for [actix-web] 4.0.0 or newer.
+
+## Mitigation technique
 
 Right now, the middleware will used token-based mitigations. In particular, double token
 submit is implemented and I'd like to also use the synchronizer token pattern.
 
-Please take a look at [https://github.com/OWASP/CheatSheetSeries/blob/master/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.md](here) for a lot of details. 
+Please take a look at [https://github.com/OWASP/CheatSheetSeries/blob/master/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.md](here) for a lot of details.
 In particular, it describes the conditions in which Double submit cookie is safer:
 ```
 So, unless you are sure that your subdomains are fully secured and only accept HTTPS connections (we believe it’s difficult to guarantee at large enterprises), you should not rely on the Double Submit Cookie technique as a primary mitigation for CSRF.
