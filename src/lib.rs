@@ -227,16 +227,16 @@ impl<Rng> CsrfMiddleware<Rng> {
     /// Set a method and path to set a CSRF cookie. This should be all locations
     /// that whose response should set a cookie (via a `Set-Cookie` header) or
     /// those that need the CSRF token value in the response, such as for forms.
-    pub fn set_cookie(mut self, method: Method, uri: impl ToString) -> Self {
-        self.inner.set_cookie.insert((method, uri.to_string()));
+    pub fn set_cookie<T: Into<String>>(mut self, method: Method, uri: T) -> Self {
+        self.inner.set_cookie.insert((method, uri.into()));
         self
     }
 
     /// Sets the cookie name. Consider prefixing the cookie name with `__Host-`
     /// or `__Secure-` as an additional defense-in-depth measure against CSRF
     /// attacks.
-    pub fn cookie_name(mut self, name: impl ToString) -> Self {
-        self.inner.cookie_name = Rc::new(name.to_string());
+    pub fn cookie_name<T: Into<String>>(mut self, name: T) -> Self {
+        self.inner.cookie_name = Rc::new(name.into());
         self
     }
 
