@@ -30,18 +30,17 @@
 //!
 //! ## Usage
 //!
-//! Using this middleware is simple. You need to configure which endpoints
-//! should set a CSRF cookie, and which endpoints need a CSRF cookie.
+//! Using this middleware is simple. You just need to configure which endpoints
+//! should set a CSRF cookie, and then use [`Csrf`](extractor::Csrf) trait to
+//! transparently validate the cookie.
 //!
 //! ```
 //! # use actix_web::App;
 //! # use actix_web::http::Method;
-//! use actix_csrf::Csrf;
+//! use actix_csrf::CsrfMiddleware;
 //! use rand::rngs::StdRng;
 //!
-//! let csrf = Csrf::<StdRng>::new()
-//!                .set_cookie(Method::GET, "/login")
-//!                .validate_cookie(Method::POST, "/login");
+//! let csrf = CsrfMiddleware::<StdRng>::new().set_cookie(Method::GET, "/login");
 //! let app = App::new().wrap(csrf);
 //! ```
 //!
@@ -63,24 +62,28 @@
 //! }
 //! ```
 //!
-//! Finally, endpoints that require a CSRF cookie must validate the CSRF token
-//! in the request. This can be done by manually accessing the cookie, or using
-//! the [`CsrfCookie`](extractor::CsrfCookie) extractor:
+//! Then, endpoints that require a CSRF cookie must validate the CSRF token
+//! in the request. This can be done by manually accessing the cookie, or by
+//! using the [`Csrf`](extractor::Csrf) extractor, which will validate the CSRF
+//! token for you if [`CsrfGuarded`](extractor::CsrfGuarded) is implemented in
+//! the underlying struct.
 //!
 //! ```
 //! # use actix_web::{HttpResponse, Responder, post};
 //! # use actix_web::web::Form;
-//! #
-//! # #[derive(serde::Deserialize)]
-//! # struct LoginForm { csrf_token: String }
-//! use actix_csrf::extractor::CsrfCookie;
+//! use actix_csrf::extractor::{Csrf, CsrfGuarded, CsrfToken};
+//!
+//! #[derive(serde::Deserialize)]
+//! struct LoginForm { csrf_token: CsrfToken }
+//!
+//! impl CsrfGuarded for LoginForm {
+//!     fn csrf_token(&self) -> &CsrfToken {
+//!         &self.csrf_token
+//!     }
+//! }
 //!
 //! #[post("/login")]
-//! async fn login(cookie: CsrfCookie, form: Form<LoginForm>) -> impl Responder {
-//!     if !cookie.validate(&form.csrf_token) {
-//!         return HttpResponse::BadRequest().finish();
-//!     }
-//!
+//! async fn login(form: Csrf<Form<LoginForm>>) -> impl Responder {
 //!     // The CSRF token is valid, so the request can proceed.
 //!
 //!     // ...Do other stuff here...
@@ -120,7 +123,6 @@ use actix_web::http::header::{self, HeaderValue};
 use actix_web::http::{Method, StatusCode};
 use actix_web::{HttpMessage, HttpResponse, ResponseError};
 use cookie::{Cookie, SameSite};
-use extractor::CsrfCookie;
 use generator::TokenRng;
 use rand::SeedableRng;
 use tracing::{error, warn};
@@ -169,11 +171,11 @@ impl Error for CsrfError {}
 
 /// CSRF middleware to manage CSRF cookies and tokens.
 #[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Csrf<Rng> {
+pub struct CsrfMiddleware<Rng> {
     inner: Inner<Rng>,
 }
 
-impl<Rng: TokenRng + SeedableRng> Csrf<Rng> {
+impl<Rng: TokenRng + SeedableRng> CsrfMiddleware<Rng> {
     /// Creates a CSRF middleware with secure defaults. Namely:
     ///
     /// - The CSRF cookie will be prefixed with `__HOST-`
@@ -190,7 +192,7 @@ impl<Rng: TokenRng + SeedableRng> Csrf<Rng> {
     }
 }
 
-impl<Rng: TokenRng> Csrf<Rng> {
+impl<Rng: TokenRng> CsrfMiddleware<Rng> {
     /// Creates a CSRF middleware with secure defaults and the provided Rng.
     /// Namely:
     ///
@@ -210,25 +212,10 @@ impl<Rng: TokenRng> Csrf<Rng> {
     }
 }
 
-impl<Rng: TokenRng + SeedableRng> Default for Csrf<Rng> {
-    fn default() -> Self {
-        Self {
-            inner: Inner::default(),
-        }
-        .cookie_name(DEFAULT_CSRF_COOKIE_NAME.to_string())
-    }
-}
-
-impl<Rng> Csrf<Rng> {
+impl<Rng> CsrfMiddleware<Rng> {
     /// Control whether we check for the token on requests.
     pub const fn enabled(mut self, enabled: bool) -> Self {
         self.inner.csrf_enabled = enabled;
-        self
-    }
-
-    /// Set a method and path to require to have a CSRF cookie set.
-    pub fn validate_cookie(mut self, method: Method, uri: impl ToString) -> Self {
-        self.inner.included.insert((method, uri.to_string()));
         self
     }
 
@@ -267,7 +254,16 @@ impl<Rng> Csrf<Rng> {
     }
 }
 
-impl<S, Rng> Transform<S, ServiceRequest> for Csrf<Rng>
+impl<Rng: TokenRng + SeedableRng> Default for CsrfMiddleware<Rng> {
+    fn default() -> Self {
+        Self {
+            inner: Inner::default(),
+        }
+        .cookie_name(DEFAULT_CSRF_COOKIE_NAME.to_string())
+    }
+}
+
+impl<S, Rng> Transform<S, ServiceRequest> for CsrfMiddleware<Rng>
 where
     S: Service<ServiceRequest, Response = ServiceResponse>,
     Rng: TokenRng + Clone,
@@ -275,11 +271,11 @@ where
     type Response = ServiceResponse;
     type Error = S::Error;
     type InitError = ();
-    type Transform = CsrfMiddleware<S, Rng>;
+    type Transform = CsrfMiddlewareImpl<S, Rng>;
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        future::ready(Ok(CsrfMiddleware {
+        future::ready(Ok(CsrfMiddlewareImpl {
             service,
             inner: self.inner.clone(),
         }))
@@ -287,7 +283,7 @@ where
 }
 
 #[doc(hidden)]
-pub struct CsrfMiddleware<S, Rng> {
+pub struct CsrfMiddlewareImpl<S, Rng> {
     service: S,
     inner: Inner<Rng>,
 }
@@ -303,8 +299,6 @@ struct Inner<Rng> {
 
     /// If false, will not check at all for CSRF tokens
     csrf_enabled: bool,
-    /// Endpoints that have CSRF protection.
-    included: HashSet<(Method, String)>,
     set_cookie: HashSet<(Method, String)>,
 }
 
@@ -323,39 +317,21 @@ impl<Rng: TokenRng> Inner<Rng> {
             http_only: true,
             same_site: Some(SameSite::Strict),
             secure: true,
-            included: HashSet::new(),
             set_cookie: HashSet::new(),
         }
     }
 }
 
-impl<Rng> Inner<Rng> {
-    /// Will return true if the middleware needs to check the CSRF tokens.
-    fn should_protect(&self, req: &ServiceRequest) -> bool {
-        let method = req.method().clone();
-        let path = req.path().to_string();
-
-        self.csrf_enabled && self.included.contains(&(method, path))
-    }
-}
-
-impl<S, Rng> Service<ServiceRequest> for CsrfMiddleware<S, Rng>
+impl<S, Rng> Service<ServiceRequest> for CsrfMiddlewareImpl<S, Rng>
 where
     S: Service<ServiceRequest, Response = ServiceResponse>,
     Rng: TokenRng,
 {
     type Response = ServiceResponse;
     type Error = S::Error;
-    type Future = CsrfMiddlewareFuture<S>;
+    type Future = CsrfMiddlewareImplFuture<S>;
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
-        if self.inner.should_protect(&req) {
-            // First make sure the tokens are both here
-            if let Err(e) = CsrfCookie::from_service_request(&self.inner.cookie_name, &req) {
-                return CsrfMiddlewareFuture::CsrfError(req.error_response(e));
-            }
-        }
-
         let cookie = if self.inner.csrf_enabled
             && self
                 .inner
@@ -367,7 +343,7 @@ where
                     Ok(token) => token,
                     Err(e) => {
                         error!("Failed to generate CSRF token, aborting request");
-                        return CsrfMiddlewareFuture::CsrfError(req.error_response(
+                        return CsrfMiddlewareImplFuture::CsrfError(req.error_response(
                             InternalError::new(e, StatusCode::INTERNAL_SERVER_ERROR),
                         ));
                     }
@@ -399,7 +375,7 @@ where
             None
         };
 
-        CsrfMiddlewareFuture::Passthrough(Passthrough {
+        CsrfMiddlewareImplFuture::Passthrough(Passthrough {
             cookie,
             service: Box::pin(self.service.call(req)),
         })
@@ -412,14 +388,14 @@ where
 
 #[doc(hidden)]
 #[derive(Debug)]
-pub enum CsrfMiddlewareFuture<S: Service<ServiceRequest>> {
+pub enum CsrfMiddlewareImplFuture<S: Service<ServiceRequest>> {
     /// A CSRF issue was detected.
     CsrfError(ServiceResponse),
     /// No CSRF issue was detected, so we pass the request through.
     Passthrough(Passthrough<S::Future>),
 }
 
-impl<S> Future for CsrfMiddlewareFuture<S>
+impl<S> Future for CsrfMiddlewareImplFuture<S>
 where
     S: Service<ServiceRequest, Response = ServiceResponse>,
 {
@@ -427,14 +403,14 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.get_mut() {
-            CsrfMiddlewareFuture::CsrfError(error) => {
+            CsrfMiddlewareImplFuture::CsrfError(error) => {
                 // TODO: Find a way to not have to clone.
                 let req = error.request().clone();
                 let mut new_error = ServiceResponse::new(req, HttpResponse::NoContent().finish());
                 std::mem::swap(&mut new_error, error);
                 Poll::Ready(Ok(new_error))
             }
-            CsrfMiddlewareFuture::Passthrough(inner) => match inner.service.as_mut().poll(cx) {
+            CsrfMiddlewareImplFuture::Passthrough(inner) => match inner.service.as_mut().poll(cx) {
                 Poll::Ready(Ok(mut res)) => {
                     if let Some(ref cookie) = inner.cookie {
                         res.response_mut()
@@ -460,11 +436,13 @@ pub struct Passthrough<Fut> {
 
 #[cfg(test)]
 mod tests {
+    use crate::extractor::{Csrf, CsrfHeader};
+
     use super::*;
 
     use actix_web::http::StatusCode;
     use actix_web::test::{self, TestRequest};
-    use actix_web::{web, App, HttpResponse};
+    use actix_web::{post, web, App, HttpResponse, Responder};
     use rand::rngs::StdRng;
 
     fn get_token_from_resp(resp: &ServiceResponse) -> String {
@@ -488,12 +466,11 @@ mod tests {
         String::from(*cookie_header.get(0).expect("header to have cookie"))
     }
 
-    // Check that the CSRF token is correctly attached to the response
     #[tokio::test]
-    async fn test_attach_token() {
+    async fn attaches_token() {
         let mut srv = test::init_service(
             App::new()
-                .wrap(Csrf::<StdRng>::new().set_cookie(Method::GET, "/"))
+                .wrap(CsrfMiddleware::<StdRng>::new().set_cookie(Method::GET, "/"))
                 .service(web::resource("/").to(|| HttpResponse::Ok())),
         )
         .await;
@@ -504,41 +481,22 @@ mod tests {
         assert!(get_cookie_from_resp(&resp).contains(DEFAULT_CSRF_COOKIE_NAME));
     }
 
-    // With default protection, POST requests is rejected.
     #[tokio::test]
-    async fn test_post_request_rejected() {
+    async fn post_request_rejected_without_header() {
+        #[post("/")]
+        async fn test_route(_: Csrf<CsrfHeader>) -> impl Responder {
+            HttpResponse::Ok()
+        }
+
         let mut srv = test::init_service(
             App::new()
-                .wrap(Csrf::<StdRng>::new().validate_cookie(Method::POST, "/"))
-                .service(web::resource("/").route(web::post().to(|| HttpResponse::Ok()))),
+                .wrap(CsrfMiddleware::<StdRng>::new())
+                .service(test_route),
         )
         .await;
+
         let resp = test::call_service(&mut srv, TestRequest::post().uri("/").to_request()).await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    // Can disable protection for unit tests.
-    #[tokio::test]
-    async fn test_post_accepted_with_disabled() {
-        let mut srv = test::init_service(
-            App::new()
-                .wrap(
-                    Csrf::<StdRng>::new()
-                        .validate_cookie(Method::POST, "/")
-                        .enabled(false),
-                )
-                .service(web::resource("/").route(web::post().to(|| HttpResponse::Ok()))),
-        )
-        .await;
-        let resp = test::call_service(&mut srv, TestRequest::post().uri("/").to_request()).await;
-        assert_eq!(resp.status(), StatusCode::OK);
-        let cookie_header: Vec<_> = resp
-            .headers()
-            .iter()
-            .filter(|(header_name, _)| header_name.as_str() == "set-cookie")
-            .collect();
-
-        assert!(cookie_header.is_empty());
     }
 
     /// Will use double submit method.
@@ -546,11 +504,7 @@ mod tests {
     async fn double_submit_correct_token() {
         let mut srv = test::init_service(
             App::new()
-                .wrap(
-                    Csrf::<StdRng>::new()
-                        .set_cookie(Method::GET, "/")
-                        .validate_cookie(Method::POST, "/"),
-                )
+                .wrap(CsrfMiddleware::<StdRng>::new().set_cookie(Method::GET, "/"))
                 .service(
                     web::resource("/")
                         .route(web::get().to(|| HttpResponse::Ok()))
@@ -562,8 +516,6 @@ mod tests {
         // First, let's get the token as a client.
         let resp = test::call_service(&mut srv, TestRequest::with_uri("/").to_request()).await;
 
-        dbg!(&resp);
-
         let token = get_token_from_resp(&resp);
         let cookie = get_cookie_from_resp(&resp);
 
@@ -574,7 +526,6 @@ mod tests {
             .insert_header((DEFAULT_CSRF_TOKEN_NAME, token))
             .to_request();
 
-        dbg!(&req);
         let resp = test::call_service(&mut srv, req).await;
         assert_eq!(resp.status(), StatusCode::OK);
     }

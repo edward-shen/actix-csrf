@@ -9,15 +9,23 @@ use crate::{CsrfError, DEFAULT_CSRF_COOKIE_NAME, DEFAULT_CSRF_TOKEN_NAME};
 
 use actix_web::dev::{Payload, ServiceRequest};
 use actix_web::{FromRequest, HttpRequest};
+use serde::de::{Error, Visitor};
+use serde::{Deserialize, Serialize};
 
 /// Extractor to get the CSRF header from the request.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub struct CsrfHeader(String);
+pub struct CsrfHeader(CsrfToken);
 
 impl CsrfHeader {
     /// Checks if the header matches the CSRF header.
     pub fn validate(&self, header_value: impl AsRef<str>) -> bool {
-        self.0 == header_value.as_ref()
+        self.0.as_ref() == header_value.as_ref()
+    }
+}
+
+impl CsrfGuarded for CsrfHeader {
+    fn csrf_token(&self) -> &CsrfToken {
+        &self.0
     }
 }
 
@@ -33,7 +41,7 @@ impl FromRequest for CsrfHeader {
 
         if let Some(header) = req.headers().get(header_name) {
             return match header.to_str() {
-                Ok(header) => ready(Ok(Self(header.to_string()))),
+                Ok(header) => ready(Ok(Self(CsrfToken(header.to_string())))),
                 Err(_) => ready(Err(CsrfError::MissingToken)),
             };
         }
@@ -66,12 +74,6 @@ impl Default for CsrfHeaderConfig {
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct CsrfCookie(String);
 
-impl AsRef<str> for CsrfCookie {
-    fn as_ref(&self) -> &str {
-        self.0.as_ref()
-    }
-}
-
 impl CsrfCookie {
     pub(crate) fn from_service_request(
         cookie_name: &str,
@@ -86,6 +88,16 @@ impl CsrfCookie {
     pub fn validate(&self, token: impl AsRef<str>) -> bool {
         self.0 == token.as_ref()
     }
+
+    fn from_request_sync(req: &HttpRequest) -> Result<Self, CsrfError> {
+        let cookie_name = req
+            .app_data::<CsrfCookieConfig>()
+            .map_or(DEFAULT_CSRF_COOKIE_NAME, |v| v.cookie_name.as_ref());
+
+        req.cookie(cookie_name)
+            .ok_or(CsrfError::MissingCookie)
+            .map(|cookie| Self(cookie.value().to_string()))
+    }
 }
 
 impl FromRequest for CsrfCookie {
@@ -94,15 +106,13 @@ impl FromRequest for CsrfCookie {
     type Future = Ready<Result<Self, Self::Error>>;
 
     fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
-        let cookie_name = req
-            .app_data::<Self::Config>()
-            .map_or(DEFAULT_CSRF_COOKIE_NAME, |v| v.cookie_name.as_ref());
+        ready(Self::from_request_sync(req))
+    }
+}
 
-        ready(
-            req.cookie(cookie_name)
-                .ok_or(CsrfError::MissingCookie)
-                .map(|cookie| Self(cookie.value().to_string())),
-        )
+impl AsRef<str> for CsrfCookie {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
     }
 }
 
@@ -121,9 +131,47 @@ impl Default for CsrfCookieConfig {
 }
 
 /// Extractor to get the CSRF token that will be set as a cookie.
-#[derive(Clone, Eq, PartialEq, Hash, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct CsrfToken(pub(crate) String);
+
+impl Serialize for CsrfToken {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_newtype_struct("Csrf Token", &self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for CsrfToken {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct CsrfTokenVisitor;
+        impl<'de> Visitor<'de> for CsrfTokenVisitor {
+            type Value = CsrfToken;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a valid csrf token")
+            }
+
+            fn visit_string<E: Error>(self, v: String) -> Result<Self::Value, E> {
+                Ok(CsrfToken(v))
+            }
+
+            fn visit_str<E: Error>(self, v: &str) -> Result<Self::Value, E> {
+                Ok(CsrfToken(v.to_string()))
+            }
+
+            fn visit_borrowed_str<E: Error>(self, v: &'de str) -> Result<Self::Value, E> {
+                Ok(CsrfToken(v.to_string()))
+            }
+        }
+
+        deserializer.deserialize_newtype_struct("Csrf Token", CsrfTokenVisitor)
+    }
+}
 
 impl CsrfToken {
     /// Retrieves a reference of the csrf token.
@@ -218,7 +266,7 @@ where
 
     fn from_request(req: &HttpRequest, payload: &mut Payload) -> Self::Future {
         CsrfExtractorFuture {
-            csrf_token: CsrfToken::from_request_sync(req),
+            csrf_token: CsrfCookie::from_request_sync(req),
             inner: Box::pin(Inner::from_request(req, payload)),
         }
     }
@@ -240,9 +288,10 @@ macro_rules! derive_csrf_guarded {
 derive_csrf_guarded!(actix_web::web::Form<T>);
 derive_csrf_guarded!(actix_web::web::Json<T>);
 
-#[doc(hidden)]
+/// Polls the underlying future, returning the underlying result if and only if
+/// the CSRF token is valid.
 pub struct CsrfExtractorFuture<Fut> {
-    csrf_token: Result<CsrfToken, CsrfError>,
+    csrf_token: Result<CsrfCookie, CsrfError>,
     inner: Pin<Box<Fut>>,
 }
 
@@ -257,7 +306,7 @@ where
         match self.inner.as_mut().poll(cx) {
             Poll::Ready(Ok(out)) => {
                 if let Ok(ref token) = self.csrf_token {
-                    if out.csrf_token() == token {
+                    if out.csrf_token().as_ref() == token.as_ref() {
                         return Poll::Ready(Ok(Csrf(out)));
                     }
                 }
@@ -270,23 +319,32 @@ where
     }
 }
 
+/// This trait represents types who have a field that represents a CSRF token.
+///
+/// This trait is required on an underlying type for the [`Csrf`] extractor to
+/// correctly function.
 pub trait CsrfGuarded {
+    /// Retrieves the CSRF token from the struct.
     fn csrf_token(&self) -> &CsrfToken;
 }
 
+/// Represents an error that occurs when polling [`CsrfExtractorFuture`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CsrfExtractorError<Inner> {
+    /// A CSRF token was not found, or was invalid.
     InvalidToken,
+    /// An underlying error occurred.
     Inner(Inner),
 }
 
-impl<Inner: Into<actix_web::error::Error>> Into<actix_web::error::Error>
-    for CsrfExtractorError<Inner>
+impl<Inner> From<CsrfExtractorError<Inner>> for actix_web::error::Error
+where
+    Inner: Into<Self>,
 {
-    fn into(self) -> actix_web::error::Error {
-        match self {
+    fn from(e: CsrfExtractorError<Inner>) -> Self {
+        match e {
             CsrfExtractorError::InvalidToken => todo!(),
-            CsrfExtractorError::Inner(inner) => inner.into(),
+            CsrfExtractorError::Inner(e) => e.into(),
         }
     }
 }
