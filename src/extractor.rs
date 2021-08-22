@@ -1,6 +1,9 @@
 //! Contains various extractors related to CSRF tokens.
 
-use std::future::{ready, Ready};
+use std::future::{ready, Future, Ready};
+use std::ops::{Deref, DerefMut};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use crate::{CsrfError, DEFAULT_CSRF_COOKIE_NAME, DEFAULT_CSRF_TOKEN_NAME};
 
@@ -134,6 +137,13 @@ impl CsrfToken {
     pub fn into_inner(self) -> String {
         self.0
     }
+
+    fn from_request_sync(req: &HttpRequest) -> Result<Self, CsrfError> {
+        req.extensions()
+            .get::<Self>()
+            .cloned()
+            .ok_or(CsrfError::MissingToken)
+    }
 }
 
 impl AsRef<str> for CsrfToken {
@@ -148,12 +158,136 @@ impl FromRequest for CsrfToken {
     type Future = Ready<Result<Self, Self::Error>>;
 
     fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
-        ready(
-            req.extensions()
-                .get::<Self>()
-                .cloned()
-                .ok_or(CsrfError::MissingToken),
-        )
+        ready(Self::from_request_sync(req))
+    }
+}
+
+/// This extractor wraps another extractor that returns some inner type that
+/// holds a CSRF token, and performs validation on the token. If the token is
+/// missing or invalid, then the extractor will return an error.
+///
+/// ```
+/// use actix_csrf::extractor::{Csrf, CsrfGuarded, CsrfToken};
+/// use actix_web::{post, Responder};
+/// use actix_web::web::Form;
+/// use serde::Deserialize;
+///
+/// #[derive(Deserialize)]
+/// struct Login {
+///    csrf: CsrfToken,
+///    email: String,
+///    password: String,
+/// }
+///
+/// impl CsrfGuarded for Login {
+///     fn csrf_token(&self) -> &CsrfToken {
+///         &self.csrf
+///     }
+/// }
+///
+/// #[post("/login")]
+/// async fn login(form: Csrf<Form<Login>>) -> impl Responder {
+///    // If we got here, then the CSRF token passed validation!
+///    format!("hello, {}, your password is {}", &form.email, &form.password)
+/// }
+/// ```
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct Csrf<Inner>(Inner);
+
+impl<Inner> Deref for Csrf<Inner> {
+    type Target = Inner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<Inner> DerefMut for Csrf<Inner> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<Inner> FromRequest for Csrf<Inner>
+where
+    Inner: FromRequest + CsrfGuarded,
+{
+    type Config = Inner::Config;
+    type Error = CsrfExtractorError<Inner::Error>;
+    type Future = CsrfExtractorFuture<Inner::Future>;
+
+    fn from_request(req: &HttpRequest, payload: &mut Payload) -> Self::Future {
+        CsrfExtractorFuture {
+            csrf_token: CsrfToken::from_request_sync(req),
+            inner: Box::pin(Inner::from_request(req, payload)),
+        }
+    }
+}
+
+macro_rules! derive_csrf_guarded {
+    ($type:path) => {
+        impl<T> CsrfGuarded for $type
+        where
+            T: CsrfGuarded,
+        {
+            fn csrf_token(&self) -> &CsrfToken {
+                self.0.csrf_token()
+            }
+        }
+    };
+}
+
+derive_csrf_guarded!(actix_web::web::Form<T>);
+derive_csrf_guarded!(actix_web::web::Json<T>);
+
+#[doc(hidden)]
+pub struct CsrfExtractorFuture<Fut> {
+    csrf_token: Result<CsrfToken, CsrfError>,
+    inner: Pin<Box<Fut>>,
+}
+
+impl<Fut, FutOut, FutErr> Future for CsrfExtractorFuture<Fut>
+where
+    Fut: Future<Output = Result<FutOut, FutErr>>,
+    FutOut: CsrfGuarded,
+{
+    type Output = Result<Csrf<FutOut>, CsrfExtractorError<FutErr>>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match self.inner.as_mut().poll(cx) {
+            Poll::Ready(Ok(out)) => {
+                if let Ok(ref token) = self.csrf_token {
+                    if out.csrf_token() == token {
+                        return Poll::Ready(Ok(Csrf(out)));
+                    }
+                }
+
+                Poll::Ready(Err(CsrfExtractorError::InvalidToken))
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(CsrfExtractorError::Inner(e))),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+pub trait CsrfGuarded {
+    fn csrf_token(&self) -> &CsrfToken;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CsrfExtractorError<Inner> {
+    InvalidToken,
+    Inner(Inner),
+}
+
+impl<Inner: Into<actix_web::error::Error>> Into<actix_web::error::Error>
+    for CsrfExtractorError<Inner>
+{
+    fn into(self) -> actix_web::error::Error {
+        match self {
+            CsrfExtractorError::InvalidToken => todo!(),
+            CsrfExtractorError::Inner(inner) => inner.into(),
+        }
     }
 }
 
