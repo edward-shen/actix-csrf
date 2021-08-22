@@ -3,18 +3,22 @@
 
 //! This crate provides a CSRF middleware to help protect endpoints.
 //!
-//! The primary entry point is through [`Csrf`], which provides a stateless
+//! The primary entry point is through [`CsrfMiddleware`] and the
+//! [`Csrf`](extractor::Csrf) extractor, which together provides a stateless
 //! CSRF mitigation implementation through a double-submit cookie pattern.
 //!
 //! ## The Double-Submit Cookie Pattern
 //!
-//! [`Csrf`] uses the double-submit cookie pattern as the mechanism for CSRF
-//! mitigation. Generally speaking, the double-submit process is as follows:
+//! [`CsrfMiddleware`] uses the double-submit cookie pattern as the mechanism
+//! for CSRF mitigation. Generally speaking, the double-submit process is as
+//! follows:
+//!
 //! - User submits a request for a resource that will directly send a CSRF token
 //! (such as a login form). The server will respond with a `Set-Cookie` header
 //! containing the CSRF token.
-//! - The user then submits a request for a protected header. The request must
-//! contain a CSRF token that is separate from the cookie.
+//! - The user then submits a request that contains the CSRF token, either
+//! through a custom header or in the request itself. The request must contain a
+//! CSRF token that is separate from the cookie.
 //! - The server then validates if the CSRF value in the request is the same as
 //! the CSRF value in the cookie. If it is, the request is allowed to proceed.
 //!
