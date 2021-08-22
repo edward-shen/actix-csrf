@@ -7,7 +7,7 @@ use std::task::{Context, Poll};
 
 use crate::{CsrfError, DEFAULT_CSRF_COOKIE_NAME, DEFAULT_CSRF_TOKEN_NAME};
 
-use actix_web::dev::{Payload, ServiceRequest};
+use actix_web::dev::Payload;
 use actix_web::{FromRequest, HttpRequest};
 use serde::de::{Error, Visitor};
 use serde::{Deserialize, Serialize};
@@ -75,15 +75,6 @@ impl Default for CsrfHeaderConfig {
 pub struct CsrfCookie(String);
 
 impl CsrfCookie {
-    pub(crate) fn from_service_request(
-        cookie_name: &str,
-        req: &ServiceRequest,
-    ) -> Result<Self, CsrfError> {
-        req.cookie(cookie_name)
-            .ok_or(CsrfError::MissingCookie)
-            .map(|cookie| Self(cookie.value().to_string()))
-    }
-
     /// Checks if the input matches the cookie.
     pub fn validate(&self, token: impl AsRef<str>) -> bool {
         self.0 == token.as_ref()
