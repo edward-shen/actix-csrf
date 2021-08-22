@@ -16,10 +16,9 @@ base64 = "0.13"
 cookie = "0.15"
 rand = { version = "0.8", features = [ "std_rng" ] }
 tracing = "0.1"
-serde = { version = "1", features = [ "derive" ], optional = true }
+serde = "1"
 
 [dev-dependencies]
-serde = { version = "1", features = [ "derive" ] }
 tokio = { version = "1", features = [ "macros", "rt-multi-thread" ] }
 
 [profile.release]
