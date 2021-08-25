@@ -16,8 +16,7 @@ CSRF cookie.
 async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
         let csrf = Csrf::<StdRng>::new()
-            .set_cookie(Method::GET, "/login")
-            .validate_cookie(Method::POST, "/login");
+            .set_cookie(Method::GET, "/login");
         App::new().wrap(csrf).service(login_ui).service(login)
     })
     .bind(("127.0.0.1", 8080))?
@@ -32,21 +31,20 @@ with a CSRF token provided as part of the protected request.
 ```rust
 #[derive(Deserialize)]
 struct LoginForm {
-    csrf_token: String,
+    csrf_token: CsrfToken,
     username: String,
     password: String,
 }
 
+impl CsrfGuarded for LoginForm {
+    fn csrf_token(&self) -> &CsrfToken {
+        &self.csrf_token
+    }
+}
+
 /// Validates a login form that has a CSRF token.
 #[post("/login")]
-async fn login(cookie: CsrfCookie, form: Form<LoginForm>) -> impl Responder {
-    // As inputs for the double submit pattern heavily varies, the middleware
-    // will not validate automatically validate CSRF tokens by itself. Callers
-    // should validate this manually, as shown.
-    if !cookie.validate(&form.csrf_token) {
-        return HttpResponse::BadRequest().finish();
-    }
-
+async fn login(form: Csrf<Form<LoginForm>>) -> impl Responder {
     // At this point, we have a valid CSRF token, so we can treat the request
     // as legitimate.
 
