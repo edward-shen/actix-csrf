@@ -8,7 +8,7 @@ use std::task::{Context, Poll};
 use crate::{CsrfError, DEFAULT_CSRF_COOKIE_NAME, DEFAULT_CSRF_TOKEN_NAME};
 
 use actix_web::dev::Payload;
-use actix_web::{FromRequest, HttpRequest, HttpResponse};
+use actix_web::{FromRequest, HttpRequest};
 use serde::de::{Error, Visitor};
 use serde::{Deserialize, Serialize};
 

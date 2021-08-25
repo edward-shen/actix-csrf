@@ -168,7 +168,7 @@ impl Display for CsrfError {
 impl ResponseError for CsrfError {
     fn error_response(&self) -> HttpResponse {
         warn!("Potential CSRF attack: {}", self);
-        HttpResponse::BadRequest().finish()
+        HttpResponse::UnprocessableEntity().finish()
     }
 }
 
@@ -501,7 +501,7 @@ mod tests {
         .await;
 
         let resp = test::call_service(&mut srv, TestRequest::post().uri("/").to_request()).await;
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     /// Will use double submit method.
