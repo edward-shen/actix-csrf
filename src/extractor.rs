@@ -30,13 +30,12 @@ impl CsrfGuarded for CsrfHeader {
 }
 
 impl FromRequest for CsrfHeader {
-    type Config = CsrfHeaderConfig;
     type Error = CsrfError;
     type Future = Ready<Result<Self, Self::Error>>;
 
     fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
         let header_name: &str = req
-            .app_data::<Self::Config>()
+            .app_data::<CsrfHeaderConfig>()
             .map_or(DEFAULT_CSRF_TOKEN_NAME, |v| v.header_name.as_ref());
 
         if let Some(header) = req.headers().get(header_name) {
@@ -92,7 +91,6 @@ impl CsrfCookie {
 }
 
 impl FromRequest for CsrfCookie {
-    type Config = CsrfCookieConfig;
     type Error = CsrfError;
     type Future = Ready<Result<Self, Self::Error>>;
 
@@ -192,7 +190,6 @@ impl AsRef<str> for CsrfToken {
 }
 
 impl FromRequest for CsrfToken {
-    type Config = ();
     type Error = CsrfError;
     type Future = Ready<Result<Self, Self::Error>>;
 
@@ -251,7 +248,6 @@ impl<Inner> FromRequest for Csrf<Inner>
 where
     Inner: FromRequest + CsrfGuarded,
 {
-    type Config = Inner::Config;
     type Error = CsrfExtractorError<Inner::Error>;
     type Future = CsrfExtractorFuture<Inner::Future>;
 
