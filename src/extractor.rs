@@ -8,7 +8,7 @@ use std::task::{Context, Poll};
 use crate::{CsrfError, DEFAULT_CSRF_COOKIE_NAME, DEFAULT_CSRF_TOKEN_NAME};
 
 use actix_web::dev::Payload;
-use actix_web::{FromRequest, HttpRequest};
+use actix_web::{FromRequest, HttpMessage, HttpRequest};
 use serde::de::{Error, Visitor};
 use serde::{Deserialize, Serialize};
 
@@ -171,6 +171,7 @@ impl CsrfToken {
 
     /// Consumes the struct, returning the underlying string.
     #[must_use]
+    #[allow(clippy::missing_const_for_fn)] // false positive
     pub fn into_inner(self) -> String {
         self.0
     }

@@ -219,6 +219,7 @@ impl<Rng: TokenRng> CsrfMiddleware<Rng> {
 
 impl<Rng> CsrfMiddleware<Rng> {
     /// Control whether we check for the token on requests.
+    #[must_use]
     pub const fn enabled(mut self, enabled: bool) -> Self {
         self.inner.csrf_enabled = enabled;
         self
@@ -227,6 +228,7 @@ impl<Rng> CsrfMiddleware<Rng> {
     /// Set a method and path to set a CSRF cookie. This should be all locations
     /// that whose response should set a cookie (via a `Set-Cookie` header) or
     /// those that need the CSRF token value in the response, such as for forms.
+    #[must_use]
     pub fn set_cookie<T: Into<String>>(mut self, method: Method, uri: T) -> Self {
         self.inner.set_cookie.insert((method, uri.into()));
         self
@@ -235,24 +237,28 @@ impl<Rng> CsrfMiddleware<Rng> {
     /// Sets the cookie name. Consider prefixing the cookie name with `__Host-`
     /// or `__Secure-` as an additional defense-in-depth measure against CSRF
     /// attacks.
+    #[must_use]
     pub fn cookie_name<T: Into<String>>(mut self, name: T) -> Self {
         self.inner.cookie_name = Rc::new(name.into());
         self
     }
 
     /// Sets the `SameSite` attribute on the cookie.
+    #[must_use]
     pub const fn same_site(mut self, same_site: Option<SameSite>) -> Self {
         self.inner.same_site = same_site;
         self
     }
 
     /// Sets the `HttpOnly` attribute on the cookie.
+    #[must_use]
     pub const fn http_only(mut self, enabled: bool) -> Self {
         self.inner.http_only = enabled;
         self
     }
 
     /// Sets the `Secure` attribute on the cookie.
+    #[must_use]
     pub const fn secure(mut self, enabled: bool) -> Self {
         self.inner.secure = enabled;
         self
