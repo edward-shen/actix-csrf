@@ -13,7 +13,7 @@ include = ["src/**/*", "LICENSE-*", "README.md"]
 [dependencies]
 actix-web = { version = "4", default_features = false, features = [ "cookies" ] }
 base64 = { version = "0.13", default_features = false }
-cookie = "0.15"
+cookie = "0.16"
 rand = { version = "0.8", features = [ "std_rng" ] }
 tracing = "0.1"
 serde = { version = "1", default_features = false }
