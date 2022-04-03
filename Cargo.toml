@@ -19,6 +19,8 @@ tracing = "0.1"
 serde = { version = "1", default_features = false }
 
 [dev-dependencies]
+actix-web = { version = "4", features = [ "cookies" ] }
+serde = { version = "1", features = [ "derive" ] }
 tokio = { version = "1", features = [ "macros", "rt-multi-thread" ] }
 
 [profile.release]
