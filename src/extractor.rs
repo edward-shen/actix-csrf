@@ -21,7 +21,7 @@ pub struct CsrfHeader(CsrfToken);
 
 impl CsrfHeader {
     /// Checks if the header matches the CSRF header.
-    pub fn validate(&self, header_value: impl AsRef<[u8]>) -> bool {
+    pub fn validate(&self, header_value: impl AsRef<str>) -> bool {
         self.0.as_ref() == header_value.as_ref()
     }
 }
@@ -55,8 +55,8 @@ impl FromRequest for CsrfHeader {
     }
 }
 
-impl AsRef<[u8]> for CsrfHeader {
-    fn as_ref(&self) -> &[u8] {
+impl AsRef<str> for CsrfHeader {
+    fn as_ref(&self) -> &str {
         self.0.as_ref()
     }
 }
@@ -112,8 +112,8 @@ impl FromRequest for CsrfCookie {
     }
 }
 
-impl AsRef<[u8]> for CsrfCookie {
-    fn as_ref(&self) -> &[u8] {
+impl AsRef<str> for CsrfCookie {
+    fn as_ref(&self) -> &str {
         self.0.as_ref()
     }
 }
@@ -235,9 +235,9 @@ impl CsrfToken {
     }
 }
 
-impl AsRef<[u8]> for CsrfToken {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_bytes()
+impl AsRef<str> for CsrfToken {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
     }
 }
 
