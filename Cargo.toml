@@ -2,7 +2,7 @@
 name = "actix-csrf"
 version = "0.5.0"
 authors = ["Edward Shen <code@eddie.sh>", "Benoit Eudier <benoit.eudier@gmail.com>"]
-edition = "2018"
+edition = "2021"
 description = "CSRF middleware for Actix"
 repository = "https://github.com/edward-shen/actix-csrf"
 license = "MIT OR Apache-2.0"
