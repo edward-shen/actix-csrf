@@ -38,14 +38,17 @@ impl FromRequest for CsrfHeader {
             .app_data::<CsrfHeaderConfig>()
             .map_or(DEFAULT_CSRF_TOKEN_NAME, |v| v.header_name.as_ref());
 
-        if let Some(header) = req.headers().get(header_name) {
-            return match header.to_str() {
-                Ok(header) => ready(Ok(Self(CsrfToken(header.to_string())))),
-                Err(_) => ready(Err(CsrfError::MissingToken)),
-            };
-        }
+        let resp = req
+            .headers()
+            .get(header_name)
+            .map_or(Err(CsrfError::MissingCookie), |header| {
+                match header.to_str() {
+                    Ok(header) => Ok(Self(CsrfToken(header.to_string()))),
+                    Err(_) => Err(CsrfError::MissingToken),
+                }
+            });
 
-        ready(Err(CsrfError::MissingCookie))
+        ready(resp)
     }
 }
 
