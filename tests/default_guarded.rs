@@ -83,7 +83,7 @@ async fn missing_cookie_fails() -> Result<()> {
         .to_request();
 
     let resp = call_service(&service, req).await;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
     Ok(())
 }
 
