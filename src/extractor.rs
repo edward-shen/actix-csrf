@@ -5,9 +5,12 @@ use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::{CsrfError, DEFAULT_CSRF_COOKIE_NAME, DEFAULT_CSRF_TOKEN_NAME};
+use crate::{
+    host_prefix, secure_prefix, CsrfError, DEFAULT_CSRF_COOKIE_NAME, DEFAULT_CSRF_TOKEN_NAME,
+};
 
 use actix_web::dev::Payload;
+use actix_web::http::header::HeaderName;
 use actix_web::{FromRequest, HttpMessage, HttpRequest};
 use serde::de::{Error, Visitor};
 use serde::{Deserialize, Serialize};
@@ -18,7 +21,7 @@ pub struct CsrfHeader(CsrfToken);
 
 impl CsrfHeader {
     /// Checks if the header matches the CSRF header.
-    pub fn validate(&self, header_value: impl AsRef<str>) -> bool {
+    pub fn validate(&self, header_value: impl AsRef<[u8]>) -> bool {
         self.0.as_ref() == header_value.as_ref()
     }
 }
@@ -34,7 +37,7 @@ impl FromRequest for CsrfHeader {
     type Future = Ready<Result<Self, Self::Error>>;
 
     fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
-        let header_name: &str = req
+        let header_name = req
             .app_data::<CsrfHeaderConfig>()
             .map_or(DEFAULT_CSRF_TOKEN_NAME, |v| v.header_name.as_ref());
 
@@ -43,7 +46,7 @@ impl FromRequest for CsrfHeader {
             .get(header_name)
             .map_or(Err(CsrfError::MissingCookie), |header| {
                 match header.to_str() {
-                    Ok(header) => Ok(Self(CsrfToken(header.to_string()))),
+                    Ok(header) => Ok(Self(CsrfToken(header.to_owned()))),
                     Err(_) => Err(CsrfError::MissingToken),
                 }
             });
@@ -52,23 +55,30 @@ impl FromRequest for CsrfHeader {
     }
 }
 
-impl AsRef<str> for CsrfHeader {
-    fn as_ref(&self) -> &str {
+impl AsRef<[u8]> for CsrfHeader {
+    fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
     }
 }
 
 /// Configuration struct for [`CsrfHeader`].
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct CsrfHeaderConfig {
-    header_name: String,
+    header_name: HeaderName,
 }
 
 impl Default for CsrfHeaderConfig {
     fn default() -> Self {
         Self {
-            header_name: DEFAULT_CSRF_TOKEN_NAME.to_string(),
+            header_name: HeaderName::from_static(DEFAULT_CSRF_TOKEN_NAME),
         }
+    }
+}
+
+impl CsrfHeaderConfig {
+    /// Sets the header name to read the CSRF token from.
+    pub const fn new(header_name: HeaderName) -> Self {
+        Self { header_name }
     }
 }
 
@@ -102,8 +112,8 @@ impl FromRequest for CsrfCookie {
     }
 }
 
-impl AsRef<str> for CsrfCookie {
-    fn as_ref(&self) -> &str {
+impl AsRef<[u8]> for CsrfCookie {
+    fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
     }
 }
@@ -118,6 +128,42 @@ impl Default for CsrfCookieConfig {
     fn default() -> Self {
         Self {
             cookie_name: DEFAULT_CSRF_COOKIE_NAME.to_string(),
+        }
+    }
+}
+
+impl CsrfCookieConfig {
+    /// Sets the cookie name. Consider using [`with_host_prefix`] or
+    /// [`with_secure_prefix`] if possible for increased security.
+    #[must_use]
+    pub const fn new(cookie_name: String) -> Self {
+        Self { cookie_name }
+    }
+
+    /// Sets the cookie name, prefixing it with `__Host-` if it wasn't already
+    /// prefixed. Note that this requires the cookie to be served with the
+    /// `secure` flag, must be set over HTTPS, must not have a domain specified,
+    /// and the path must be `/`.
+    #[must_use]
+    pub fn with_host_prefix(cookie_name: String) -> Self {
+        Self::with_prefix(host_prefix!(), cookie_name)
+    }
+
+    /// Sets the cookie name, prefixing it with `__Host-` if it wasn't already
+    /// prefixed. Note that this requires the cookie to be served with the
+    /// `secure` flag.
+    #[must_use]
+    pub fn with_secure_prefix(cookie_name: String) -> Self {
+        Self::with_prefix(secure_prefix!(), cookie_name)
+    }
+
+    fn with_prefix(prefix: &'static str, cookie_name: String) -> Self {
+        if cookie_name.starts_with(prefix) {
+            Self { cookie_name }
+        } else {
+            Self {
+                cookie_name: format!("{prefix}{cookie_name}"),
+            }
         }
     }
 }
@@ -148,28 +194,30 @@ impl<'de> Deserialize<'de> for CsrfToken {
                 formatter.write_str("a valid csrf token")
             }
 
-            fn visit_string<E: Error>(self, v: String) -> Result<Self::Value, E> {
-                Ok(CsrfToken(v))
-            }
-
-            fn visit_str<E: Error>(self, v: &str) -> Result<Self::Value, E> {
-                Ok(CsrfToken(v.to_string()))
-            }
-
-            fn visit_borrowed_str<E: Error>(self, v: &'de str) -> Result<Self::Value, E> {
-                Ok(CsrfToken(v.to_string()))
+            fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                Ok(CsrfToken(v.to_owned()))
             }
         }
 
-        deserializer.deserialize_newtype_struct("Csrf Token", CsrfTokenVisitor)
+        deserializer.deserialize_string(CsrfTokenVisitor)
     }
 }
 
 impl CsrfToken {
+    /// Used for testing purposes only. Using this without permission may cause
+    /// horribleness.
+    #[doc(hidden)]
+    pub const fn test_create(value: String) -> Self {
+        Self(value)
+    }
+
     /// Retrieves a reference of the csrf token.
     #[must_use]
     pub fn get(&self) -> &str {
-        &self.0
+        self.0.as_ref()
     }
 
     /// Consumes the struct, returning the underlying string.
@@ -187,9 +235,9 @@ impl CsrfToken {
     }
 }
 
-impl AsRef<str> for CsrfToken {
-    fn as_ref(&self) -> &str {
-        &self.0
+impl AsRef<[u8]> for CsrfToken {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_bytes()
     }
 }
 
@@ -376,7 +424,7 @@ mod tests {
         let req = TestRequest::default()
             .insert_header((
                 header::COOKIE,
-                format!("{}=sometoken", DEFAULT_CSRF_COOKIE_NAME),
+                format!("{DEFAULT_CSRF_COOKIE_NAME}=sometoken"),
             ))
             .to_http_request();
 

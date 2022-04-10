@@ -61,7 +61,7 @@
 //! async fn login_ui(token: CsrfToken) -> impl Responder {
 //!     // `token` will contain the csrf value that will be sent as a cookie.
 //!     // Render something with the token, e.g. as a hidden input in a form.
-//!     println!("csrf value that will be set is: {}", token.get());
+//!     println!("csrf value that will be set is: {:?}", token.get());
 //!     HttpResponse::Ok().finish()
 //! }
 //! ```
@@ -141,8 +141,24 @@ macro_rules! token_name {
     };
 }
 
+#[macro_export]
+#[doc(hidden)]
+macro_rules! host_prefix {
+    () => {
+        "__Host-"
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! secure_prefix {
+    () => {
+        "__Secure-"
+    };
+}
+
 const DEFAULT_CSRF_TOKEN_NAME: &str = token_name!();
-const DEFAULT_CSRF_COOKIE_NAME: &str = concat!("__HOST-", token_name!());
+const DEFAULT_CSRF_COOKIE_NAME: &str = concat!(host_prefix!(), token_name!());
 
 /// Internal errors that can happen when processing CSRF tokens.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
@@ -183,7 +199,7 @@ pub struct CsrfMiddleware<Rng> {
 impl<Rng: TokenRng + SeedableRng> CsrfMiddleware<Rng> {
     /// Creates a CSRF middleware with secure defaults. Namely:
     ///
-    /// - The CSRF cookie will be prefixed with `__HOST-`
+    /// - The CSRF cookie will be prefixed with `__Host-`
     /// - `SameSite` is set to `Strict`.
     /// - `Secure` is set.
     /// - `HttpOnly` is set.
@@ -201,7 +217,7 @@ impl<Rng: TokenRng> CsrfMiddleware<Rng> {
     /// Creates a CSRF middleware with secure defaults and the provided Rng.
     /// Namely:
     ///
-    /// - The CSRF cookie will be prefixed with `__HOST-`
+    /// - The CSRF cookie will be prefixed with `__Host-`
     /// - `SameSite` is set to `Strict`.
     /// - `Secure` is set.
     /// - `HttpOnly` is set.
@@ -374,13 +390,15 @@ where
                 cookie_builder.finish()
             };
 
-            req.extensions_mut().insert(CsrfToken(token));
+            let csrf_token = CsrfToken(token);
+            req.extensions_mut().insert(csrf_token);
 
             // The characters allowed in a cookie should be a strict subset
             // of the characters allowed in a header, so this should never
             // fail.
             let header = HeaderValue::from_str(&cookie.to_string())
                 .expect("cookie to be a valid header value");
+
             Some(header)
         } else {
             None
