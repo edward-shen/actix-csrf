@@ -255,12 +255,37 @@ impl<Rng> CsrfMiddleware<Rng> {
         self
     }
 
-    /// Sets the cookie name. Consider prefixing the cookie name with `__Host-`
-    /// or `__Secure-` as an additional defense-in-depth measure against CSRF
-    /// attacks.
+    /// Sets the cookie name. Consider using [`host_prefixed_cookie_name`][1] or
+    /// [`secure_prefixed_cookie_name`][2] to prefix the cookie name with
+    /// `__Host-` or `__Secure-` on your behalf, or prefixing it manually.
+    ///
+    /// [1]: Self::host_prefixed_cookie_name
+    /// [2]: Self::secure_prefixed_cookie_name
     #[must_use]
     pub fn cookie_name<T: Into<String>>(mut self, name: T) -> Self {
         self.inner.cookie_name = Rc::new(name.into());
+        self
+    }
+
+    /// Sets the cookie name, with `__Host-` automatically prefixed.
+    #[must_use]
+    pub fn host_prefixed_cookie_name<T: AsRef<str>>(mut self, name: T) -> Self {
+        let mut prefixed = host_prefix!().to_owned();
+        prefixed.push_str(name.as_ref());
+        self.inner.cookie_name = Rc::new(prefixed);
+        self
+    }
+
+    /// Sets the cookie name. Consider using [`host_prefixed_cookie_name`][1] or
+    /// manually prefixing it with `__Host-` for increased defense-in-depth
+    /// measures.
+    ///
+    /// [1]: Self::host_prefixed_cookie_name
+    #[must_use]
+    pub fn secure_prefixed_cookie_name<T: AsRef<str>>(mut self, name: T) -> Self {
+        let mut prefixed = secure_prefix!().to_owned();
+        prefixed.push_str(name.as_ref());
+        self.inner.cookie_name = Rc::new(prefixed);
         self
     }
 
