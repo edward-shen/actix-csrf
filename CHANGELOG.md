@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.6.1 - 2022-05-25
+
+### Added
+
+- Added `CsrfMiddleware::host_prefixed_cookie_name` and
+`CsrfMiddleware::secure_prefixed_cookie_name`.
+- Added `CsrfMiddleware::cookie_config` to help create a `CsrfCookieConfig` from
+the current middleware state. This primarily is useful if the cookie name was
+changed.
+- Added `CsrfMiddleware::domain`, which sets the `Domain` attribute of the set
+cookie and downgrades the `__Host-` prefix to `__Secure-` if it exists.
+
+### Changed
+
+- Fixed `CsrfMiddleware` constructor docs.
+- Fixed `CsrfCookieConfig` docs.
+- `actix-csrf` compiles with Rust 1.54.0. This is not a guarantee, but a best
+effort attempt.
+
 ## 0.6.0 - 2022-04-10
 
 ### Added
