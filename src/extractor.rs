@@ -133,8 +133,11 @@ impl Default for CsrfCookieConfig {
 }
 
 impl CsrfCookieConfig {
-    /// Sets the cookie name. Consider using [`with_host_prefix`] or
-    /// [`with_secure_prefix`] if possible for increased security.
+    /// Sets the cookie name. Consider using [`with_host_prefix`][1] or
+    /// [`with_secure_prefix`][2] if possible for increased security.
+    ///
+    /// [1]: Self::with_host_prefix
+    /// [2]: Self::with_secure_prefix
     #[must_use]
     pub const fn new(cookie_name: String) -> Self {
         Self { cookie_name }
@@ -149,7 +152,7 @@ impl CsrfCookieConfig {
         Self::with_prefix(host_prefix!(), cookie_name)
     }
 
-    /// Sets the cookie name, prefixing it with `__Host-` if it wasn't already
+    /// Sets the cookie name, prefixing it with `__Secure-` if it wasn't already
     /// prefixed. Note that this requires the cookie to be served with the
     /// `secure` flag.
     #[must_use]
