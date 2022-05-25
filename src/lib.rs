@@ -281,6 +281,22 @@ impl<Rng> CsrfMiddleware<Rng> {
         self
     }
 
+    /// Sets the domain of the cookie.
+    ///
+    /// This will replace the `__Host-` prefix with `__Secure-` instead, if the
+    /// cookie name starts with `__Host-` as `__Host-` requires a non-existent
+    /// Domain attribute. This weakens a defense-in-depth measure and is not
+    /// recommended unless there is an unavoidable need and the security
+    /// implications have been fully considered.
+    #[must_use]
+    pub fn domain(mut self, domain: Option<String>) -> Self {
+        if let Some(stripped) = self.inner.cookie_name.strip_prefix(host_prefix!()) {
+            self.inner.cookie_name = Rc::new(format!(concat!(secure_prefix!(), "{}"), stripped));
+        }
+        self.inner.domain = domain;
+        self
+    }
+
     /// Produces an CSRF cookie config determined from the current middleware
     /// state. Note that this is **not** needed if you are using default cookie
     /// names.
@@ -332,6 +348,7 @@ struct Inner<Rng> {
     http_only: bool,
     same_site: Option<SameSite>,
     secure: bool,
+    domain: Option<String>,
 
     /// If false, will not check at all for CSRF tokens
     csrf_enabled: bool,
@@ -353,6 +370,7 @@ impl<Rng: TokenRng> Inner<Rng> {
             http_only: true,
             same_site: Some(SameSite::Strict),
             secure: true,
+            domain: None,
             set_cookie: HashSet::new(),
         }
     }
@@ -394,6 +412,10 @@ where
 
                 if let Some(same_site) = self.inner.same_site {
                     cookie_builder = cookie_builder.same_site(same_site);
+                }
+
+                if let Some(domain) = &self.inner.domain {
+                    cookie_builder = cookie_builder.domain(domain);
                 }
 
                 cookie_builder.finish()
