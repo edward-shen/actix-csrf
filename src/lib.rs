@@ -200,11 +200,13 @@ pub struct CsrfMiddleware<Rng> {
 impl<Rng: TokenRng + SeedableRng> CsrfMiddleware<Rng> {
     /// Creates a CSRF middleware with secure defaults. Namely:
     ///
-    /// - The CSRF cookie will be prefixed with `__Host-`
+    /// - The CSRF cookie will be prefixed with `__Host-`. This also implies the
+    /// following:
+    ///   - `Secure` is set.
+    ///   - `Domain` is _not_ set.
+    ///   - `Path` is set to `/`.
     /// - `SameSite` is set to `Strict`.
-    /// - `Secure` is set.
     /// - `HttpOnly` is set.
-    /// - `Path` is set to `/`.
     ///
     /// This represents the strictest possible configuration. Requests must be
     /// always sent over HTTPS. Users must explicitly relax these restrictions.
@@ -218,11 +220,13 @@ impl<Rng: TokenRng> CsrfMiddleware<Rng> {
     /// Creates a CSRF middleware with secure defaults and the provided Rng.
     /// Namely:
     ///
-    /// - The CSRF cookie will be prefixed with `__Host-`
+    /// - The CSRF cookie will be prefixed with `__Host-`. This also implies the
+    /// following:
+    ///   - `Secure` is set.
+    ///   - `Domain` is _not_ set.
+    ///   - `Path` is set to `/`.
     /// - `SameSite` is set to `Strict`.
-    /// - `Secure` is set.
     /// - `HttpOnly` is set.
-    /// - `Path` is set to `/`.
     ///
     /// This represents the strictest possible configuration. Requests must be
     /// always sent over HTTPS. Users must explicitly relax these restrictions.
