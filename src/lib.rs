@@ -174,9 +174,9 @@ pub enum CsrfError {
 impl Display for CsrfError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CsrfError::TokenMismatch => write!(f, "The CSRF Tokens do not match"),
-            CsrfError::MissingCookie => write!(f, "The CSRF Cookie is missing"),
-            CsrfError::MissingToken => write!(f, "The CSRF Header is missing"),
+            Self::TokenMismatch => write!(f, "The CSRF Tokens do not match"),
+            Self::MissingCookie => write!(f, "The CSRF Cookie is missing"),
+            Self::MissingToken => write!(f, "The CSRF Header is missing"),
         }
     }
 }

@@ -212,6 +212,7 @@ impl<'de> Deserialize<'de> for CsrfToken {
 impl CsrfToken {
     /// Used for testing purposes only. Using this without permission may cause
     /// horribleness.
+    #[must_use]
     #[doc(hidden)]
     pub const fn test_create(value: String) -> Self {
         Self(value)
