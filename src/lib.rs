@@ -268,6 +268,21 @@ impl<Rng> CsrfMiddleware<Rng> {
     }
 
     /// Sets the cookie name, with `__Host-` automatically prefixed.
+    ///
+    /// # Examples
+    ///
+    /// This functionally is equivalent to prefixing the cookie name with
+    /// `__Host-`:
+    /// ```
+    /// use actix_csrf::CsrfMiddleware;
+    /// use rand::rngs::StdRng;
+    ///
+    /// let host_prefixed = CsrfMiddleware::<StdRng>::new()
+    ///     .host_prefixed_cookie_name("my_special_cookie");
+    /// let manually_prefixed = CsrfMiddleware::<StdRng>::new()
+    ///     .cookie_name("__Host-my_special_cookie");
+    /// assert_eq!(host_prefixed.cookie_config(), manually_prefixed.cookie_config());
+    /// ```
     #[must_use]
     pub fn host_prefixed_cookie_name<T: AsRef<str>>(mut self, name: T) -> Self {
         let mut prefixed = host_prefix!().to_owned();
@@ -278,9 +293,25 @@ impl<Rng> CsrfMiddleware<Rng> {
 
     /// Sets the cookie name. Consider using [`host_prefixed_cookie_name`][1] or
     /// manually prefixing it with `__Host-` for increased defense-in-depth
-    /// measures.
+    /// measures. This is equivalent to calling
+    /// `cookie_name(format!("__Secure-{}", name))`.
     ///
     /// [1]: Self::host_prefixed_cookie_name
+    ///
+    /// # Examples
+    ///
+    /// This functionally is equivalent to prefixing the cookie name with
+    /// `__Secure-`:
+    /// ```
+    /// use actix_csrf::CsrfMiddleware;
+    /// use rand::rngs::StdRng;
+    ///
+    /// let host_prefixed = CsrfMiddleware::<StdRng>::new()
+    ///     .secure_prefixed_cookie_name("my_special_cookie");
+    /// let manually_prefixed = CsrfMiddleware::<StdRng>::new()
+    ///     .cookie_name("__Secure-my_special_cookie");
+    /// assert_eq!(host_prefixed.cookie_config(), manually_prefixed.cookie_config());
+    /// ```
     #[must_use]
     pub fn secure_prefixed_cookie_name<T: AsRef<str>>(mut self, name: T) -> Self {
         let mut prefixed = secure_prefix!().to_owned();
