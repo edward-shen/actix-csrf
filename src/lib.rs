@@ -127,6 +127,7 @@ use actix_web::http::header::{self, HeaderValue};
 use actix_web::http::{Method, StatusCode};
 use actix_web::{HttpMessage, HttpResponse, ResponseError};
 use cookie::{Cookie, SameSite};
+use extractor::CsrfCookieConfig;
 use rand::SeedableRng;
 use tracing::{error, warn};
 
@@ -278,6 +279,14 @@ impl<Rng> CsrfMiddleware<Rng> {
     pub const fn secure(mut self, enabled: bool) -> Self {
         self.inner.secure = enabled;
         self
+    }
+
+    /// Produces an CSRF cookie config determined from the current middleware
+    /// state. Note that this is **not** needed if you are using default cookie
+    /// names.
+    #[must_use]
+    pub fn cookie_config(&self) -> CsrfCookieConfig {
+        CsrfCookieConfig::new((*self.inner.cookie_name).clone())
     }
 }
 

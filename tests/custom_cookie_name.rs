@@ -85,6 +85,35 @@ async fn post_request_is_guarded() -> Result<()> {
     Ok(())
 }
 
+#[actix_web::test]
+async fn custom_cookie_name_shortcut_works() -> Result<()> {
+    let csrf = CsrfMiddleware::<StdRng>::new()
+        .set_cookie(Method::GET, "/login")
+        .cookie_name("Custom-Cookie-Name");
+    let service = init_service(
+        App::new()
+            .app_data(csrf.cookie_config())
+            .wrap(csrf)
+            .service(request_csrf)
+            .service(login),
+    )
+    .await;
+
+    let (_, cookie) = get_cookie(&service).await?;
+
+    let req = TestRequest::post()
+        .uri("/login")
+        .cookie(cookie.clone())
+        .set_form(LoginForm {
+            csrf_token: CsrfToken::test_create(cookie.value().to_owned()),
+        })
+        .to_request();
+
+    let resp = call_service(&service, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    Ok(())
+}
+
 /// Returns a simple login form with a CSRF token.
 #[get("/login")]
 async fn request_csrf(token: CsrfToken) -> impl Responder {
