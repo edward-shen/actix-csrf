@@ -349,11 +349,11 @@ impl<Rng> CsrfMiddleware<Rng> {
     /// recommended unless there is an unavoidable need and the security
     /// implications have been fully considered.
     #[must_use]
-    pub fn domain(mut self, domain: Option<String>) -> Self {
+    pub fn domain<S: Into<String>>(mut self, domain: impl Into<Option<S>>) -> Self {
         if let Some(stripped) = self.inner.cookie_name.strip_prefix(host_prefix!()) {
             self.inner.cookie_name = Rc::new(format!(concat!(secure_prefix!(), "{}"), stripped));
         }
-        self.inner.domain = domain;
+        self.inner.domain = domain.into().map(Into::into);
         self
     }
 
@@ -586,6 +586,22 @@ mod tests {
         String::from(*cookie_header.get(0).expect("header to have cookie"))
     }
 
+    fn get_cookie_domain_from_resp(resp: &ServiceResponse) -> String {
+        let cookie_header: Vec<_> = resp
+            .headers()
+            .iter()
+            .filter(|(header_name, _)| header_name.as_str() == "set-cookie")
+            .map(|(_, value)| value.to_str().expect("header to be valid string"))
+            .flat_map(|v| v.split(';'))
+            .collect();
+        String::from(
+            cookie_header
+                .into_iter()
+                .find_map(|s| s.trim().strip_prefix("Domain="))
+                .expect("header to have cookie"),
+        )
+    }
+
     #[tokio::test]
     async fn attaches_token() {
         let mut srv = test::init_service(
@@ -648,5 +664,23 @@ mod tests {
 
         let resp = test::call_service(&mut srv, req).await;
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn domain_attribute_is_set() {
+        let mut srv = test::init_service(
+            App::new()
+                .wrap(
+                    CsrfMiddleware::<StdRng>::new()
+                        .set_cookie(Method::GET, "/")
+                        .domain("example.com"),
+                )
+                .service(web::resource("/").to(|| HttpResponse::Ok())),
+        )
+        .await;
+        let resp = test::call_service(&mut srv, TestRequest::with_uri("/").to_request()).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        assert_eq!(get_cookie_domain_from_resp(&resp), "example.com");
     }
 }
