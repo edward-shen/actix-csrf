@@ -165,7 +165,7 @@ impl CsrfCookieConfig {
             Self { cookie_name }
         } else {
             Self {
-                cookie_name: format!("{prefix}{cookie_name}"),
+                cookie_name: format!("{}{}", prefix, cookie_name),
             }
         }
     }
