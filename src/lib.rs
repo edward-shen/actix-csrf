@@ -434,6 +434,16 @@ impl<Rng: TokenRng> Inner<Rng> {
             set_cookie: HashSet::new(),
         }
     }
+
+    fn contains(&self, req: &ServiceRequest) -> bool {
+        req.match_pattern().map_or_else(
+            || {
+                self.set_cookie
+                    .contains(&(req.method().clone(), req.path().to_string()))
+            },
+            |p| self.set_cookie.contains(&(req.method().clone(), p)),
+        )
+    }
 }
 
 impl<S, Rng> Service<ServiceRequest> for CsrfMiddlewareImpl<S, Rng>
@@ -446,12 +456,7 @@ where
     type Future = CsrfMiddlewareImplFuture<S>;
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
-        let cookie = if self.inner.csrf_enabled
-            && self
-                .inner
-                .set_cookie
-                .contains(&(req.method().clone(), req.path().to_string()))
-        {
+        let cookie = if self.inner.csrf_enabled && self.inner.contains(&req) {
             let token =
                 match self.inner.rng.borrow_mut().generate_token() {
                     Ok(token) => token,
@@ -682,5 +687,35 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
 
         assert_eq!(get_cookie_domain_from_resp(&resp), "example.com");
+    }
+
+    #[tokio::test]
+    async fn path_info_is_set() {
+        let mut srv = test::init_service(
+            App::new()
+                .wrap(CsrfMiddleware::<StdRng>::new().set_cookie(Method::GET, "/{id}"))
+                .service(
+                    web::resource("/{id}")
+                        .route(web::get().to(|| HttpResponse::Ok()))
+                        .route(web::post().to(|| HttpResponse::Ok())),
+                ),
+        )
+        .await;
+
+        // First, let's get the token as a client.
+        let resp = test::call_service(&mut srv, TestRequest::with_uri("/1").to_request()).await;
+
+        let token = get_token_from_resp(&resp);
+        let cookie = get_cookie_from_resp(&resp);
+
+        // Now we can do another request to a protected endpoint.
+        let req = TestRequest::post()
+            .uri("/1")
+            .insert_header(("Cookie", cookie))
+            .insert_header((DEFAULT_CSRF_TOKEN_NAME, token))
+            .to_request();
+
+        let resp = test::call_service(&mut srv, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 }
