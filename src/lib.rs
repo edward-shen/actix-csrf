@@ -528,14 +528,14 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.get_mut() {
-            CsrfMiddlewareImplFuture::CsrfError(error) => {
+            Self::CsrfError(error) => {
                 // TODO: Find a way to not have to clone.
                 let req = error.request().clone();
                 let mut new_error = ServiceResponse::new(req, HttpResponse::NoContent().finish());
                 std::mem::swap(&mut new_error, error);
                 Poll::Ready(Ok(new_error))
             }
-            CsrfMiddlewareImplFuture::Passthrough(inner) => match inner.service.as_mut().poll(cx) {
+            Self::Passthrough(inner) => match inner.service.as_mut().poll(cx) {
                 Poll::Ready(Ok(mut res)) => {
                     if let Some(ref cookie) = inner.cookie {
                         res.response_mut()
