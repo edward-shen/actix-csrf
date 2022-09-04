@@ -132,9 +132,9 @@ use rand::SeedableRng;
 use tracing::{error, warn};
 
 pub mod extractor;
-mod generator;
+mod token_rng;
 
-pub use crate::generator::TokenRng;
+pub use crate::token_rng::TokenRng;
 
 macro_rules! token_name {
     () => {
