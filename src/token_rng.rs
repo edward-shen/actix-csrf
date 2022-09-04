@@ -6,13 +6,12 @@ use rand::{CryptoRng, Error, Fill, RngCore};
 /// Used to generate CSRF tokens.
 ///
 /// This trait is used to generate a token that can be used as a CSRF token. It
-/// is implemented for all CSRNG (Cryptographically Secure RNG) types, so in
-/// general, you don't need to implement this yourself. In fact, you should
-/// avoid implementing this trait unless you're aware of the security
-/// implications.
+/// is implemented for all CSRNG (Cryptographically Secure RNG) types. This
+/// should not be implemented directly; instead, implement [`CryptoRng`] and
+/// [`RngCore`] instead.
 ///
 /// Implementors of this trait should generate a token that's difficult to
-/// guess, and is safe to store as a cookie. For blanket implementations, this
+/// guess and is safe to store as a cookie. For blanket implementations, this
 /// is 32 bytes of random data, encoded as base64 without padding.
 pub trait TokenRng: CryptoRng {
     /// Generates a CSRF token.
