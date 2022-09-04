@@ -340,7 +340,8 @@ derive_csrf_guarded!(actix_web::web::Form<T>);
 derive_csrf_guarded!(actix_web::web::Json<T>);
 
 /// Polls the underlying future, returning the underlying result if and only if
-/// the CSRF token is valid.
+/// the CSRF token is valid. This is an implementation detail of [`Csrf`], and
+/// cannot be constructed normally.
 pub struct CsrfExtractorFuture<Fut> {
     csrf_token: Result<CsrfCookie, CsrfError>,
     inner: Pin<Box<Fut>>,

@@ -17,8 +17,9 @@
 //! (such as a login form). The server will respond with a `Set-Cookie` header
 //! containing the CSRF token.
 //! - The user then submits a request that contains the CSRF token, either
-//! through a custom header or in the request itself. The request must contain a
-//! CSRF token that is separate from the cookie.
+//! through a custom header or in the request itself. This results in the client
+//! sending the CRSF token twice: once as a cookie and once as a header or as
+//! part of the request itself.
 //! - The server then validates if the CSRF value in the request is the same as
 //! the CSRF value in the cookie. If it is, the request is allowed to proceed.
 //!
@@ -343,11 +344,11 @@ impl<Rng> CsrfMiddleware<Rng> {
 
     /// Sets the domain of the cookie.
     ///
-    /// This will replace the `__Host-` prefix with `__Secure-` instead, if the
-    /// cookie name starts with `__Host-` as `__Host-` requires a non-existent
-    /// Domain attribute. This weakens a defense-in-depth measure and is not
-    /// recommended unless there is an unavoidable need and the security
-    /// implications have been fully considered.
+    /// This is incompatible with `__Host-` prefixed cookies. If the cookie is
+    /// a `__Host-` prefixed cookie, this function will downgrade the cookie to
+    /// a use the `__Secure-` prefix instead. This weakens a defense-in-depth
+    /// measure and is not recommended unless there is an unavoidable need and
+    /// the security implications have been fully considered.
     #[must_use]
     pub fn domain<S: Into<String>>(mut self, domain: impl Into<Option<S>>) -> Self {
         if let Some(stripped) = self.inner.cookie_name.strip_prefix(host_prefix!()) {
