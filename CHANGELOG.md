@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.7.0 - 2022-09-04
+
+### Added
+
+- Added `Crsf::into_inner` (#6; thanks @Conni2461)
+
+### Changed
+
+- Since `actix-web` was updated to 4.1.0, the MSRV was changed to 1.59.
+`actix-csrf` will follow `actix-web` and will build against 1.59.
+
+### Fixed
+
+- Routes with path info will properly be matched against a CRSF token (#8;
+thanks @Conni2461)
+
 ## 0.6.1 - 2022-05-25
 
 ### Added
