@@ -286,6 +286,14 @@ impl FromRequest for CsrfToken {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Csrf<Inner>(Inner);
 
+impl<Inner> Csrf<Inner> {
+    /// Deconstruct to an inner value
+    #[must_use]
+    pub fn into_inner(self) -> Inner {
+        self.0
+    }
+}
+
 impl<Inner> Deref for Csrf<Inner> {
     type Target = Inner;
 
