@@ -23,9 +23,14 @@ async fn main() -> std::io::Result<()> {
             // Our login form is at `/login`, and we want the middleware to set
             // the csrf token when they reach the page. This also lets us access
             // the newly set token with the `CrsfToken` extractor.
-            .set_cookie(Method::GET, "/login");
+            .set_cookie(Method::GET, "/login")
+            .cookie_name("Csrf-Token");
 
-        App::new().wrap(csrf).service(login_ui).service(login)
+        App::new()
+            .app_data(csrf.cookie_config())
+            .wrap(csrf)
+            .service(login_ui)
+            .service(login)
     })
     .bind(("127.0.0.1", 8080))?
     .run()
