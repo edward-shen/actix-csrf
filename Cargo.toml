@@ -26,7 +26,6 @@ serde = { version = "1", features = [ "derive" ] }
 tokio = { version = "1", features = [ "macros", "rt-multi-thread" ] }
 openssl = { version = "0.10", features = ["vendored"] }
 
-
 [profile.release]
 lto = true
 codegen-units = 1

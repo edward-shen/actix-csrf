@@ -9,11 +9,9 @@ use actix_web::http::Method;
 use actix_web::web::Form;
 use actix_web::HttpResponse;
 use actix_web::{get, post, App, HttpServer, Responder};
-use openssl::{
-    pkey::PKey,
-    ssl::{SslAcceptor, SslAcceptorBuilder, SslMethod},
-    x509::X509,
-};
+use openssl::pkey::PKey;
+use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslMethod};
+use openssl::x509::X509;
 use rand::prelude::StdRng;
 use serde::Deserialize;
 use tracing::info;
