@@ -9,9 +9,26 @@ use actix_web::http::Method;
 use actix_web::web::Form;
 use actix_web::HttpResponse;
 use actix_web::{get, post, App, HttpServer, Responder};
+use openssl::pkey::PKey;
+use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslMethod};
+use openssl::x509::X509;
 use rand::prelude::StdRng;
 use serde::Deserialize;
 use tracing::info;
+
+fn get_ssl_build() -> SslAcceptorBuilder {
+    let key = include_bytes!("key/server.pem");
+    let key = PKey::private_key_from_pem(key).unwrap();
+
+    let cert = include_bytes!("key/cert.pem");
+    let cert = X509::from_pem(cert).unwrap();
+
+    let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
+    builder.set_private_key(key.as_ref()).unwrap();
+    builder.set_certificate(cert.as_ref()).unwrap();
+
+    builder
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -24,10 +41,9 @@ async fn main() -> std::io::Result<()> {
             // the csrf token when they reach the page. This also lets us access
             // the newly set token with the `CrsfToken` extractor.
             .set_cookie(Method::GET, "/login");
-
         App::new().wrap(csrf).service(login_ui).service(login)
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind_openssl(("127.0.0.1", 8443), get_ssl_build())?
     .run()
     .await
 }

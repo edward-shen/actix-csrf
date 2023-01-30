@@ -12,7 +12,7 @@ include = ["src/**/*", "LICENSE-*", "README.md"]
 
 [dependencies]
 actix-web = { version = "4", default_features = false, features = [ "cookies" ] }
-base64 = { version = "0.13", default_features = false }
+base64 = { version = "0.13", default_features = false, features = [ "std" ]}
 cookie = "0.16"
 rand = { version = "0.8", features = [ "std_rng" ] }
 tracing = "0.1"
@@ -20,10 +20,11 @@ serde = { version = "1", default_features = false }
 
 [dev-dependencies]
 anyhow = "1"
-actix-web = { version = "4", features = [ "cookies" ] }
+actix-web = { version = "4", features = [ "cookies", "openssl"] }
 actix-http = "3"
 serde = { version = "1", features = [ "derive" ] }
 tokio = { version = "1", features = [ "macros", "rt-multi-thread" ] }
+openssl = { version = "0.10", features = ["vendored"] }
 
 [profile.release]
 lto = true
