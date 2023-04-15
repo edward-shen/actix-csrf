@@ -1,6 +1,6 @@
 [package]
 name = "actix-csrf"
-version = "0.7.0"
+version = "0.7.1"
 authors = ["Edward Shen <code@eddie.sh>", "Benoit Eudier <benoit.eudier@gmail.com>"]
 edition = "2021"
 description = "CSRF middleware for Actix"
@@ -12,7 +12,7 @@ include = ["src/**/*", "LICENSE-*", "README.md"]
 
 [dependencies]
 actix-web = { version = "4", default_features = false, features = [ "cookies" ] }
-base64 = { version = "0.13", default_features = false, features = [ "std" ]}
+base64 = { version = "0.21.0", default_features = false, features = [ "std" ]}
 cookie = "0.16"
 rand = { version = "0.8", features = [ "std_rng" ] }
 tracing = "0.1"

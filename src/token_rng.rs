@@ -1,6 +1,7 @@
 //! Token generators and related crypto functions.
 
-use base64::URL_SAFE_NO_PAD;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
 use rand::{CryptoRng, Error, Fill, RngCore};
 
 /// Used to generate CSRF tokens.
@@ -26,6 +27,6 @@ impl<Rng: CryptoRng + RngCore> TokenRng for Rng {
     fn generate_token(&mut self) -> Result<String, Error> {
         let mut buf = [0; 32];
         buf.try_fill(self)?;
-        Ok(base64::encode_config(buf, URL_SAFE_NO_PAD))
+        Ok(URL_SAFE_NO_PAD.encode(buf))
     }
 }
