@@ -19,12 +19,13 @@ tracing = "0.1"
 serde = { version = "1", default_features = false }
 
 [dev-dependencies]
+# These versions are pinned to ensure compatibility with 4.0.0
 anyhow = "1"
-actix-web = { version = "4", features = [ "cookies", "openssl"] }
-actix-http = "3"
+actix-web = { version = "=4.0.0", features = [ "cookies", "openssl"] }
+actix-http = "=3.0.0"
 serde = { version = "1", features = [ "derive" ] }
 tokio = { version = "1", features = [ "macros", "rt-multi-thread" ] }
-openssl = { version = "0.10", features = ["vendored"] }
+openssl = { version = "0.10" }
 
 [profile.release]
 lto = true
