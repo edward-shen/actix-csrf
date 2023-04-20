@@ -1,6 +1,6 @@
 [package]
 name = "actix-csrf"
-version = "0.7.1"
+version = "0.8.0"
 authors = ["Edward Shen <code@eddie.sh>", "Benoit Eudier <benoit.eudier@gmail.com>"]
 edition = "2021"
 description = "CSRF middleware for Actix"
