@@ -45,10 +45,11 @@ impl FromRequest for CsrfHeader {
             .headers()
             .get(header_name)
             .map_or(Err(CsrfError::MissingCookie), |header| {
-                match header.to_str() {
-                    Ok(header) => Ok(Self(CsrfToken(header.to_owned()))),
-                    Err(_) => Err(CsrfError::MissingToken),
-                }
+                header
+                    .to_str()
+                    .map_or(Err(CsrfError::MissingToken), |header| {
+                        Ok(Self(CsrfToken(header.to_owned())))
+                    })
             });
 
         ready(resp)
@@ -165,7 +166,7 @@ impl CsrfCookieConfig {
             Self { cookie_name }
         } else {
             Self {
-                cookie_name: format!("{}{}", prefix, cookie_name),
+                cookie_name: format!("{prefix}{cookie_name}"),
             }
         }
     }

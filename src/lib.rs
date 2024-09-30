@@ -14,14 +14,14 @@
 //! follows:
 //!
 //! - User submits a request for a resource that will directly send a CSRF token
-//! (such as a login form). The server will respond with a `Set-Cookie` header
-//! containing the CSRF token.
+//!   (such as a login form). The server will respond with a `Set-Cookie` header
+//!   containing the CSRF token.
 //! - The user then submits a request that contains the CSRF token, either
-//! through a custom header or in the request itself. This results in the client
-//! sending the CRSF token twice: once as a cookie and once as a header or as
-//! part of the request itself.
+//!   through a custom header or in the request itself. This results in the client
+//!   sending the CRSF token twice: once as a cookie and once as a header or as
+//!   part of the request itself.
 //! - The server then validates if the CSRF value in the request is the same as
-//! the CSRF value in the cookie. If it is, the request is allowed to proceed.
+//!   the CSRF value in the cookie. If it is, the request is allowed to proceed.
 //!
 //! This is why this process is known as a double-submit: You submit the CSRF
 //! value to a CSRF protected endpoint in two different ways. For more
@@ -202,7 +202,7 @@ impl<Rng: TokenRng + SeedableRng> CsrfMiddleware<Rng> {
     /// Creates a CSRF middleware with secure defaults. Namely:
     ///
     /// - The CSRF cookie will be prefixed with `__Host-`. This also implies the
-    /// following:
+    ///   following:
     ///   - `Secure` is set.
     ///   - `Domain` is _not_ set.
     ///   - `Path` is set to `/`.
@@ -222,7 +222,7 @@ impl<Rng: TokenRng> CsrfMiddleware<Rng> {
     /// Namely:
     ///
     /// - The CSRF cookie will be prefixed with `__Host-`. This also implies the
-    /// following:
+    ///   following:
     ///   - `Secure` is set.
     ///   - `Domain` is _not_ set.
     ///   - `Path` is set to `/`.
