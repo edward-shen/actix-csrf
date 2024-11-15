@@ -12,7 +12,7 @@ categories = ["web-programming::http-server"]
 include = ["src/**/*", "LICENSE-*", "README.md"]
 
 [dependencies]
-actix-web = { version = "4", default-features = false, features = [ "cookies" ] }
+actix-web = { version = "4.3.1", default-features = false, features = [ "cookies" ] }
 base64 = { version = "0.21.0", default-features = false, features = [ "std" ]}
 cookie = "0.16"
 rand = { version = "0.8", features = [ "std_rng" ] }
@@ -22,8 +22,8 @@ serde = { version = "1", default-features = false }
 [dev-dependencies]
 # These versions are pinned to ensure compatibility with 4.0.0
 anyhow = "1"
-actix-web = { version = "=4.0.0", features = [ "cookies", "openssl"] }
-actix-http = "=3.0.0"
+actix-web = { version = "=4.3.1", features = [ "cookies", "openssl"] }
+actix-http = "=3.3.1"
 serde = { version = "1", features = [ "derive" ] }
 tokio = { version = "1", features = [ "macros", "rt-multi-thread" ] }
 openssl = { version = "0.10" }
