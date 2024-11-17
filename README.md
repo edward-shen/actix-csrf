@@ -1,6 +1,6 @@
 # actix-csrf
 
-CSRF middleware for [actix-web] 4.0.0 or newer that uses the Double-Submit Token
+CSRF middleware for [actix-web] 4.3.1 or newer that uses the Double-Submit Token
 pattern.
 
 _This crate has not yet been audited. Use in production at your own risk._
@@ -63,6 +63,13 @@ Users are highly recommended to read the
 
 This crate attempts to have secure defaults, and users must explicitly disable
 defense-in-depth features.
+
+## MSRV Changes
+
+Changes to the Minimum Supported Rust Version (MSRV) will not be considered a
+breaking change. In pre-1.0 versions, changes to MSRV may occur in any update
+(e.g. 0.8.0 to 0.8.1), while after 1.0, changes to MSRV may appear as a minor or
+major update.
 
 ## License
 
