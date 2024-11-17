@@ -256,8 +256,9 @@ impl FromRequest for CsrfToken {
 }
 
 /// This extractor wraps another extractor that returns some inner type that
-/// holds a CSRF token, and performs validation on the token. If the token is
-/// missing or invalid, then the extractor will return an error.
+/// holds a CSRF token, and performs validation on the token.
+///
+/// If the token is missing or invalid, then the extractor will return an error.
 ///
 /// ```
 /// use actix_csrf::extractor::{Csrf, CsrfGuarded, CsrfToken};
