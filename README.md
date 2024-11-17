@@ -58,8 +58,8 @@ This is only one of many ways to use the Double-Submit Token pattern; see the
 ## Security Considerations
 
 There are advantages and limitations to using the Double Submit Token pattern.
-Users are highly recommended to read the [Owasp article on CSRF Protection][csrf]
-before using this middleware.
+Users are highly recommended to read the
+[Owasp article on CSRF Protection][csrf] before using this middleware.
 
 This crate attempts to have secure defaults, and users must explicitly disable
 defense-in-depth features.
@@ -68,10 +68,9 @@ defense-in-depth features.
 
 Licensed under either of
 
- * Apache License, Version 2.0
-   ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license
-   ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or
+  http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
 
