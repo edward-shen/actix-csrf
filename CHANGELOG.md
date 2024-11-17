@@ -1,8 +1,10 @@
 # Changelog
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project adheres to
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## 0.8.0 - 2023-04-19
 
@@ -19,31 +21,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Since `actix-web` was updated to 4.1.0, the MSRV was changed to 1.59.
-`actix-csrf` will follow `actix-web` and will build against 1.59.
+  `actix-csrf` will follow `actix-web` and will build against 1.59.
 
 ### Fixed
 
 - Routes with path info will properly be matched against a CRSF token (#8;
-thanks @Conni2461)
+  thanks @Conni2461)
 
 ## 0.6.1 - 2022-05-25
 
 ### Added
 
 - Added `CsrfMiddleware::host_prefixed_cookie_name` and
-`CsrfMiddleware::secure_prefixed_cookie_name`.
+  `CsrfMiddleware::secure_prefixed_cookie_name`.
 - Added `CsrfMiddleware::cookie_config` to help create a `CsrfCookieConfig` from
-the current middleware state. This primarily is useful if the cookie name was
-changed.
+  the current middleware state. This primarily is useful if the cookie name was
+  changed.
 - Added `CsrfMiddleware::domain`, which sets the `Domain` attribute of the set
-cookie and downgrades the `__Host-` prefix to `__Secure-` if it exists.
+  cookie and downgrades the `__Host-` prefix to `__Secure-` if it exists.
 
 ### Changed
 
 - Fixed `CsrfMiddleware` constructor docs.
 - Fixed `CsrfCookieConfig` docs.
 - `actix-csrf` compiles with Rust 1.54.0. This is not a guarantee, but a best
-effort attempt.
+  effort attempt.
 
 ## 0.6.0 - 2022-04-10
 
@@ -73,14 +75,14 @@ effort attempt.
 ### Added
 
 - A `Csrf` extractor that wraps around other extractors has been added. in
-conjunction with the `CsrfGuarded` trait, this provides a difficult to misuse
-API over the implementation in previous versions.
+  conjunction with the `CsrfGuarded` trait, this provides a difficult to misuse
+  API over the implementation in previous versions.
 
 ### Changed
 
 - `Csrf` is now named `CsrfMiddleware`.
 - `CsrfMiddleware` no longer validates requests; that functionality has been
-moved to the `Csrf` extractor.
+  moved to the `Csrf` extractor.
 - `CsrfMiddleware::set_cookie` and `CsrfMiddleware::cookie_name` now accept a
 - `impl Into<String>` instead of `impl ToString`.
 - `actix_csrf` now depends on `serde` and no longer has a `serde` feature.
@@ -97,7 +99,7 @@ moved to the `Csrf` extractor.
 ### Added
 
 - Users can now specify the `serde` feature, which currently only implements
-`Serialize` and `Deserialize` for `CsrfToken`.
+  `Serialize` and `Deserialize` for `CsrfToken`.
 
 ## 0.2.0 - 2021-08-18
 
