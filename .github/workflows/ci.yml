@@ -10,3 +10,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.72.0
       - run: cargo test
       - run: cargo test --all-features
+  # All examples should at minimum compile.
+  # Otherwise they're not good examples
+  build-examples:
+    name: Build all examples using cargo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@1.72.0
+      - run: cargo build --examples --all-features
