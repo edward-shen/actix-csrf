@@ -37,7 +37,13 @@ serde = { version = "1", features = [ "derive" ] }
 tokio = { version = "1", features = [ "macros", "rt-multi-thread" ] }
 openssl = { version = "0.10" }
 mime = "0.3.17"
+actix-multipart = { version = "0.7.2" }
+parse-size = { version = "=1.0.0"}
 
 [profile.release]
 lto = true
 codegen-units = 1
+
+[[example]]
+name = "file_upload_form"
+required-features = ["actix-multipart"]
