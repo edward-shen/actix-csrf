@@ -34,8 +34,13 @@
 //! render all CSRF mitigation techniques ineffective!
 //!
 //! ## Features:
-//! - `actix-multipart` Enables compatibility with
-//!     the [`actix_multipart`] library.
+#![cfg_attr(
+    feature = "actix-multipart",
+    doc = r##"
+- `actix-multipart` Enables compatibility with
+    the [`actix_multipart`] library.
+"##
+)]
 //!
 //! ## Usage
 //!
@@ -102,43 +107,46 @@
 //! ```
 //!
 //! For simple but complete examples, see the [examples] directory.
-//!
-//! ## Usage with [`actix_multipart`]
-//! <div class="warning">
-//!
-//! This requires the `actix-multipart` feature to be enabled
-//!
-//! </div>
-//!
-//! Usage with [`actix_multipart`] is almost the same as using it with
-//! actix's buiiltin [`Form`](actix_web::web::Form), with one exception:
-//! the `csrf_token` field must have type [`Text<CsrfToken>`](actix_multipart::form::text::Text)
-//! to interpret the CSRF token from the
-//! multipart form data. This works as follows:
-//!```
-//! # use actix_web::{HttpResponse, Responder, post};
-//! use actix_multipart::form::{text::Text, MultipartForm};
-//! use actix_csrf::extractor::{Csrf, CsrfGuarded, CsrfToken};
-//!
-//! #[derive(MultipartForm)]
-//! struct LoginForm { csrf_token: Text<CsrfToken> }
-//!
-//! impl CsrfGuarded for LoginForm {
-//!     fn csrf_token(&self) -> &CsrfToken {
-//!         &self.csrf_token
-//!     }
-//! }
-//!
-//! #[post("/login")]
-//! async fn login(form: Csrf<MultipartForm<LoginForm>>) -> impl Responder {
-//!     // The CSRF token is valid, so the request can proceed.
-//!
-//!     // ...Do other stuff here...
-//!
-//!     HttpResponse::Ok().finish()
-//! }
-//! ```
+#![cfg_attr(
+    feature = "actix-multipart",
+    doc = r##"
+## Usage with [`actix_multipart`]
+<div class="warning">
 
+This requires the `actix-multipart` feature to be enabled
+
+</div>
+
+Usage with [`actix_multipart`] is almost the same as using it with
+actix's buiiltin [`Form`](actix_web::web::Form), with one exception:
+the `csrf_token` field must have type [`Text<CsrfToken>`](actix_multipart::form::text::Text)
+to interpret the CSRF token from the
+multipart form data. This works as follows:
+```
+# use actix_web::{HttpResponse, Responder, post};
+use actix_multipart::form::{text::Text, MultipartForm};
+use actix_csrf::extractor::{Csrf, CsrfGuarded, CsrfToken};
+
+#[derive(MultipartForm)]
+struct LoginForm { csrf_token: Text<CsrfToken> }
+
+impl CsrfGuarded for LoginForm {
+    fn csrf_token(&self) -> &CsrfToken {
+        &self.csrf_token
+    }
+}
+
+#[post("/login")]
+async fn login(form: Csrf<MultipartForm<LoginForm>>) -> impl Responder {
+    // The CSRF token is valid, so the request can proceed.
+
+    // ...Do other stuff here...
+
+    HttpResponse::Ok().finish()
+}
+```
+"##
+)]
 //! ## Defense-in-depth Measures
 //!
 //! By default, this middleware multiple various defense-in-depth measures, such
