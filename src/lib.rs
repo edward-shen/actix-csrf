@@ -34,13 +34,8 @@
 //! render all CSRF mitigation techniques ineffective!
 //!
 //! ## Features:
-#![cfg_attr(
-    feature = "actix-multipart",
-    doc = r##"
-- `actix-multipart` Enables compatibility with
-    the [`actix_multipart`] library.
-"##
-)]
+//! - `actix-multipart` Enables compatibility with
+//!    the `actix_multipart` library for multipart form support.
 //!
 //! ## Usage
 //!
