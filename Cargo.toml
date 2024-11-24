@@ -11,6 +11,13 @@ keywords = ["actix", "middleware", "csrf"]
 categories = ["web-programming::http-server"]
 include = ["src/**/*", "LICENSE-*", "README.md"]
 
+# Make sure docs.rs creates docs using all features
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+actix-multipart = ["dep:actix-multipart", "dep:parse-size"]
+
 [dependencies]
 actix-web = { version = "4.3.1", default-features = false, features = [ "cookies" ] }
 base64 = { version = "0.21.0", default-features = false, features = [ "std" ]}
@@ -18,16 +25,23 @@ cookie = "0.16"
 rand = { version = "0.8", features = [ "std_rng" ] }
 tracing = "0.1"
 serde = { version = "1", default-features = false }
+actix-multipart = { version = "0.7.2" , optional = true }
+# Needs pinning cuz MSRV for versions > 1.1.0 is rust 1.82
+parse-size = { version = "=1.0.0", optional = true }
 
 [dev-dependencies]
-# These versions are pinned to ensure compatibility with 4.0.0
 anyhow = "1"
 actix-web = { version = "=4.3.1", features = [ "cookies", "openssl"] }
 actix-http = "=3.3.1"
 serde = { version = "1", features = [ "derive" ] }
 tokio = { version = "1", features = [ "macros", "rt-multi-thread" ] }
 openssl = { version = "0.10" }
+mime = "0.3.17"
 
 [profile.release]
 lto = true
 codegen-units = 1
+
+[[example]]
+name = "file_upload_form"
+required-features = ["actix-multipart"]

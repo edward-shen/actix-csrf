@@ -341,6 +341,16 @@ macro_rules! derive_csrf_guarded {
 derive_csrf_guarded!(actix_web::web::Form<T>);
 derive_csrf_guarded!(actix_web::web::Json<T>);
 
+#[cfg(feature = "actix-multipart")]
+impl<T> CsrfGuarded for actix_multipart::form::MultipartForm<T>
+where
+    T: actix_multipart::form::MultipartCollect + CsrfGuarded,
+{
+    fn csrf_token(&self) -> &CsrfToken {
+        self.0.csrf_token()
+    }
+}
+
 /// Polls the underlying future, returning the underlying result if and only if
 /// the CSRF token is valid. This is an implementation detail of [`Csrf`], and
 /// cannot be constructed normally.
