@@ -1,4 +1,4 @@
-//! This example shows a bare bones example of adding CSRF protection to an image upload
+//! This file shows a bare bones example of adding CSRF protection to an image upload
 //! HTML form. Remember that these examples are isolated, may not consider all
 //! security aspects, such as the strengths and weaknesses of the double-submit
 //! technique used.
@@ -90,15 +90,15 @@ impl CsrfGuarded for UploadForm {
     }
 }
 
-/// Validates an uload form that has a CSRF token.
+/// Validates an upload form that has a CSRF token.
 #[post("/uploads")]
 async fn uploads(
     // `Csrf` will validate the field with the CSRF token. Since Csrf implements
-    // Deref and DerefMut, so you can directly access the actual form data as
+    // Deref and DerefMut, you can directly access the actual form data as
     // normal.
     form: Csrf<MultipartForm<UploadForm>>,
 ) -> impl Responder {
-    // At this point, we have a valid CSRF token, so we can treat the request
+    // At this point we have a valid CSRF token, so we can treat the request
     // as legitimate.
 
     // NOTE: Remember that CSRF protections are only effective if there isn't
