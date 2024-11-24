@@ -8,6 +8,11 @@ and this project adheres to
 
 ## 0.9.0 - Unreleased
 
+### Added
+
+- Added support for `actix-multipart` via the feature of the same name (#16;
+  thanks @siblingsofthevoid)
+
 ## Changed
 
 - Bump MSRV to 1.72.0 (#14; thanks @siblingsofthevoid)
